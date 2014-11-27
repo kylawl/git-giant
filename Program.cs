@@ -1,4 +1,4 @@
-/* Copyright (c) 2014 Luminawesome Games Ltd. All Rights Reserved. */
+// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
 
 using System;
 using System.IO;
@@ -20,7 +20,7 @@ namespace GitBifrost
             {
                 foreach (string str in args)
                 {
-                    Console.WriteLine(str);
+                    //Console.WriteLine(str);
                 }
             }
         }
