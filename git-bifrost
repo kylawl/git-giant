@@ -1,6 +1,4 @@
 #!/bin/bash
-pushd `dirname $BASH_SOURCE` > /dev/null 2>&1
-
-mono GitBifrost.exe $@
-
-popd > /dev/null 2>&1	
+if [ "$(uname)" = "Darwin" ]; then
+	mono `dirname $BASH_SOURCE`/bin/Debug/git-bifrost.exe "$@"
+fi
