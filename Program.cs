@@ -14,6 +14,7 @@ namespace GitBifrost
 {
     class StoreData : Dictionary<string, string> { }
     class StoreContainer : Dictionary<string, StoreData> { }
+    delegate int CommandDelegate(string[] args);
 
     class Program
     {
@@ -44,7 +45,6 @@ namespace GitBifrost
             Console.Error.WriteLine(format, arg);
         }
 
-        delegate void CommandDelegate(string[] args);
 
         static int Main(string[] args)
         {
@@ -55,8 +55,8 @@ namespace GitBifrost
             using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
             {
                 LogLine("Bifrost: {0}", string.Join(" ", args));
-                //LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
-                //LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
+                LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
+//                LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
 
                 Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
@@ -65,6 +65,7 @@ namespace GitBifrost
                 Commands["filter-clean"] = FilterClean;
                 Commands["filter-smudge"] = FilterSmudge;
                 Commands["help"] = Help;
+                Commands["clone"] = Clone;
                 Commands["activate"] = Activate;
 
 
@@ -72,7 +73,7 @@ namespace GitBifrost
 
                 if (arg_command != null)
                 {
-                    Commands[arg_command](args);
+                    result = Commands[arg_command](args);
                 }
 
                 LogLine("");
@@ -81,79 +82,88 @@ namespace GitBifrost
             return result;
         }
 
-        static void HookSync(string[] args)
+        static int HookSync(string[] args)
         {
-
+            return 0;
         }
 
-        static void HookPush(string[] args)
+        static int HookPush(string[] args)
         {
             string arg_branch = args[1].TrimEnd('/');
             string arg_remote = args[2].TrimEnd('/');
 
-            LogLine("Bifrost: Updating datastore(s) for remote '{0}'", arg_remote);
-
-            StoreContainer stores = GetStores();
-            foreach (KeyValuePair<string, StoreData> store_kvp in stores)
+            if (Directory.Exists(DefaultLocalDataLocation))
             {
-                StoreData store_data = store_kvp.Value;
+                LogLine("Bifrost: Updating datastore(s) for remote '{0}'", arg_remote);
 
-                string store_url = store_data["url"].TrimEnd('/');
-                string store_remote_url = store_data["remote"].TrimEnd('/');    
-
-                if (store_remote_url != arg_remote || !Directory.Exists(store_url))
+                StoreContainer stores = GetStores();
+                foreach (KeyValuePair<string, StoreData> store_kvp in stores)
                 {
-                    continue;
-                }
+                    StoreData store_data = store_kvp.Value;
 
-                LogLine("Bifrost: Pushing to '{0}'", store_url);
+                    string store_url = store_data["url"].TrimEnd('/');
+                    string store_remote_url = store_data["remote"].TrimEnd('/');    
 
-                int files_pushed = 0;
-                int files_skipped = 0;
-                int files_skipped_late = 0;
-
-                string[] source_files = Directory.GetFiles(DefaultLocalDataLocation);
-
-                foreach (string file in source_files)
-                {
-                    string filename = Path.GetFileName(file);
-
-                    string dest_filepath = Path.Combine(store_url, filename);
-
-                    if (!File.Exists(dest_filepath))
+                    if (store_remote_url != arg_remote || !Directory.Exists(store_url))
                     {
-                        Guid guid = Guid.NewGuid();
+                        continue;
+                    }
 
-                        string temp_file = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
+                    LogLine("Bifrost: Pushing to '{0}'", store_url);
 
-                        string dest_filepath_temp = Path.Combine(store_url, temp_file);
+                    int files_pushed = 0;
+                    int files_skipped = 0;
+                    int files_skipped_late = 0;
 
-                        File.Copy(file, dest_filepath_temp);                    
+
+                    string[] source_files = Directory.GetFiles(DefaultLocalDataLocation);
+
+                    foreach (string file in source_files)
+                    {
+                        string filename = Path.GetFileName(file);
+
+                        string dest_filepath = Path.Combine(store_url, filename);
 
                         if (!File.Exists(dest_filepath))
                         {
-                            File.Move(dest_filepath_temp, dest_filepath);
-                            ++files_pushed;
+                            Guid guid = Guid.NewGuid();
+
+                            string temp_file = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
+
+                            string dest_filepath_temp = Path.Combine(store_url, temp_file);
+
+                            File.Copy(file, dest_filepath_temp);                    
+
+                            if (!File.Exists(dest_filepath))
+                            {
+                                File.Move(dest_filepath_temp, dest_filepath);
+                                ++files_pushed;
+                            }
+                            else
+                            {
+                                File.Delete(temp_file);
+                                ++files_skipped_late;
+                            }
                         }
                         else
                         {
-                            File.Delete(temp_file);
-                            ++files_skipped_late;
+                            // TODO: Safety check for comparing size of local file to hash file (incase of collision)
+
+                            files_skipped++;
                         }
                     }
-                    else
-                    {
-                        // TODO: Safety check for comparing size of local file to hash file (incase of collision)
 
-                        files_skipped++;
-                    }
+                    LogLine("Bifrost: {0} Copied, {1} Skipped (total), {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
                 }
-
-                LogLine("Bifrost: {0} Copied, {1} Skipped (total), {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
             }
+
+            return 0;
         }
 
-        static void FilterClean(string[] args)
+        /// <summary>
+        /// Updates the local data store with files from a git commit
+        /// </summary>       
+        static int FilterClean(string[] args)
         {            
             string arg_filepath = null;
 
@@ -163,53 +173,61 @@ namespace GitBifrost
             }
             else
             {
-                return;
+                return 1;
             }
 
-            MemoryStream file_stream = new MemoryStream(StartingBufferSize); // Start with a meg
-
-            string file_hash_string = null;
+            MemoryStream file_stream = new MemoryStream(StartingBufferSize);
 
             using (Stream stdin = Console.OpenStandardInput())
             {
                 stdin.CopyTo(file_stream);
+                file_stream.Position = 0;
             }
+
+            byte[] file_hash_bytes = SHA1.Create().ComputeHash(file_stream);
+            string file_hash = BitConverter.ToString(file_hash_bytes).Replace("-", "");
 
             file_stream.Position = 0;
 
-            LogLine("Bytes: {0}", file_stream.Length);
-
             using (StreamWriter output_writer = new StreamWriter(Console.OpenStandardOutput()))
             {
-                HashAlgorithm hashcalc = SHA1.Create();
-                byte[] file_hash = hashcalc.ComputeHash(file_stream);
-
-                file_hash_string = BitConverter.ToString(file_hash).Replace("-", "");
-
-                string link_data = string.Format("SHA1:{0}", file_hash_string);
-
-                output_writer.WriteLine(link_data);
+                output_writer.WriteLine(file_hash);
+                output_writer.WriteLine(file_stream.Length);
             }
 
-
             LogLine("Name: {0}", arg_filepath);
-            LogLine("Hash: {0}", file_hash_string);
+            LogLine("Bytes: {0}", file_stream.Length);
+            LogLine("Hash: {0}", file_hash);
 
-            string output_filename = String.Format("{0}-{1}.bin", file_hash_string, Path.GetFileName(arg_filepath));
-            string output_filepath = Path.Combine(DefaultLocalDataLocation, output_filename);
+            string output_filename = String.Format("{0}-{1}.bin", file_hash, Path.GetFileName(arg_filepath));           
 
-            if (!File.Exists(output_filepath))
+            WriteToLocalStore(file_stream, output_filename);
+
+            return 0;
+        }
+
+        static void WriteToLocalStore(Stream file_stream, string filename)
+        {
+            string filepath = Path.Combine(DefaultLocalDataLocation, filename);
+
+            if (!File.Exists(filepath))
             {
                 Directory.CreateDirectory(DefaultLocalDataLocation);
 
-                using (FileStream cache_stream = new FileStream(output_filepath, FileMode.Create, FileAccess.Write))
-                {                    
-                    file_stream.WriteTo(cache_stream);
+                using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
+                {
+                    file_stream.CopyTo(output_stream);
+
+                    LogLine("Bifrost: Local store - updated {0}", filepath);
                 }
+            }
+            else
+            {
+                LogLine("Bifost: Local store - skipped");
             }
         }
 
-        static void FilterSmudge(string[] args)
+        static int FilterSmudge(string[] args)
         {
 //            Debugger.Break();
 
@@ -221,28 +239,23 @@ namespace GitBifrost
             }
             else
             {
-                return;
+                return 1;
             }
 
-            string hash_type = null;
             string expected_file_hash = null;
+            int expected_file_size = -1;
 
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
-                string link_data = input_reader.ReadLine();
-                string[] link_tokens = link_data.Split(':');
-
-                hash_type = link_tokens[0];
-                expected_file_hash = link_tokens[1];
+                expected_file_hash = input_reader.ReadLine(); 
+                expected_file_size = int.Parse(input_reader.ReadLine());
             }
 
             string input_filename = String.Format("{0}-{1}.bin", expected_file_hash, Path.GetFileName(arg_filepath));
 
-            string[] data_stores = null;
-
 			string[] loaded_stores = GitConfigGetRegex(@".*\.url", ".gitbifrost");
-            data_stores = new string[loaded_stores.Length + 1];
 
+            string[] data_stores = new string[loaded_stores.Length + 1];
             data_stores[0] = DefaultLocalDataLocation;
 
             int index = 1;
@@ -251,71 +264,118 @@ namespace GitBifrost
                 string[] store_tokens = store.Split(new char[] {' '}, 2);
                 data_stores[index++] = store_tokens[1];
             }
-                
+
+            bool succeeded = false;
+
             foreach (string datastore_location in data_stores)
             {            
                 string input_filepath = Path.Combine(datastore_location, input_filename);       
 
                 if (File.Exists(input_filepath))
                 {
-                    int file_size = 0;
                     byte[] file_contents = File.ReadAllBytes(input_filepath);
-                    file_size = file_contents.Length;
+                    int loaded_file_size = file_contents.Length;
 
-                    HashAlgorithm hashcalc = SHA1.Create();
-                    byte[] loaded_file_hash = hashcalc.ComputeHash(file_contents, 0, file_size);
-                    string loaded_file_hash_string = BitConverter.ToString(loaded_file_hash).Replace("-", "");
+                    byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
+                    string loaded_file_hash = BitConverter.ToString(loaded_file_hash_bytes).Replace("-", "");
 
                     LogLine("Name: {0}", arg_filepath);
                     LogLine("Expect Hash: {0}", expected_file_hash);
-                    LogLine("Loaded Hash: {0}", loaded_file_hash_string);
+                    LogLine("Loaded Hash: {0}", loaded_file_hash);
+                    LogLine("Expected Size: {0}", expected_file_size);
+                    LogLine("Loaded Size: {0}", loaded_file_size);
 
-                    // TODO: Safety check for comparing size of local file to hash file (incase of collision)
+                    //
+                    // Safety checking size and hash
+                    //
 
-                    if (loaded_file_hash_string != expected_file_hash)
+                    if (expected_file_size != loaded_file_size)
                     {
-                        throw new InvalidDataException();
+                        LogLine("!!!ERROR!!!");
+                        LogLine("File size missmatch with '{0}'", arg_filepath);
+                        LogLine("Store '{0}'", datastore_location);
+                        LogLine("Expected {0}, got {1}", expected_file_size, loaded_file_size);
+                        continue;
                     }
+
+                    if (loaded_file_hash != expected_file_hash)
+                    {
+                        LogLine("!!!ERROR!!!");
+                        LogLine("File hash missmatch with '{0}'", arg_filepath);
+                        LogLine("Store '{0}'", datastore_location);
+                        LogLine("Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
+                        continue;
+                    }
+
+                    //
+                    // Finally write file
+                    //
+
+                    WriteToLocalStore(new MemoryStream(file_contents), input_filename);
 
                     using (Stream stdout = Console.OpenStandardOutput())
                     {
-                        stdout.Write(file_contents, 0, file_size);
+                        stdout.Write(file_contents, 0, loaded_file_size);
                     }
+
+                    succeeded = true;
 
                     break;
                 }
             }
+
+            if (!succeeded)
+            {
+                LogLine("Bifrost: Failed to get file '{0}'", arg_filepath);
+            }
+
+            return succeeded ? 0 : 1;
         }
 
-        static void Help(string[] args)
+        static int Help(string[] args)
         {
-
+            return 0;
         }
 
-        static void Activate(string[] args)
+        static int Clone(string[] args)
+        {
+            string arg_remote = args[1];
+            string arg_directory = args.Length > 2 ? args[2] : "./";
+
+            Git("clone", "--no-checkout", arg_remote, arg_directory);
+
+            Directory.SetCurrentDirectory(arg_directory);
+
+            GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
+            GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
+            GitConfigSet("filter.bifrost.required", "true");
+
+            File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
+            Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
+            File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
+            Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+
+            Git("checkout");
+
+            return 0;
+        }
+
+        static int Activate(string[] args)
         {
             if (!Directory.Exists(".git"))
             {
-                Console.WriteLine("No git repository at {0}", Directory.GetCurrentDirectory());
-                return;
+                Console.WriteLine("No git repository at '{0}'", Directory.GetCurrentDirectory());
+                return 1;
             }
 
             GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
             GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
             GitConfigSet("filter.bifrost.required", "true");
 
-            //using (StreamWriter post_checkout = new StreamWriter(File.OpenWrite(".git/hooks/post-checkout")))
-            //{
-            //    post_checkout.BaseStream.Position = post_checkout.BaseStream.Length - 1;
-
-            //    post_checkout.WriteLine("git-bifrost sync");
-            //}
-
 			File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
 			Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
 			File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
 			Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
-
 
             //SetConfig("localstore.slim", "true", ".gitbifrost");
 
@@ -333,13 +393,6 @@ namespace GitBifrost
             GitConfigSet("store.luminawesome.offsite.user", "kyle", ".gitbifrost");
             GitConfigSet("store.luminawesome.offsite.password", "some_password", ".gitbifrost");
 
-
-            //SetConfig("luminawesome.offsite.storeurl", "D:/Work/BifrostTestCDN", ".bifroststores");
-
-            //StreamWriter File.CreateText
-
-            //File.WriteAllText(".gitbifrost", "# Add something meaningful here");
-
             if (args.Contains("-ica", StringComparer.CurrentCultureIgnoreCase) ||
                 args.Contains("--include-common-attributes", StringComparer.CurrentCultureIgnoreCase))
             {
@@ -347,6 +400,8 @@ namespace GitBifrost
             }
 
             Console.WriteLine("Bifrost is now active");
+
+            return 0;
         }
 
         static StoreContainer GetStores()
@@ -394,12 +449,12 @@ namespace GitBifrost
             return Git(command).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);;
         }
 
-        static string Git(string arguments)
+        static string Git(params string[] arguments)
         {
             Process process = new Process();
             ProcessStartInfo psi = process.StartInfo;
             psi.FileName = "git";
-            psi.Arguments = arguments;
+            psi.Arguments = string.Join(" ", arguments);
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
             psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\");                   
