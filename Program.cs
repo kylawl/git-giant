@@ -20,7 +20,7 @@ namespace GitBifrost
     {
         const int StartingBufferSize = 1024 * 1024;
 
-        const string DefaultLocalDataLocation = ".git/bifrost/data";
+        const string LocalStoreLocation = ".git/bifrost/data";
         const string RemoteDataStore = "D:/Work/BifrostTestCDN";
 
         static readonly string[] StandardAttributes = new string[]
@@ -45,6 +45,7 @@ namespace GitBifrost
             Console.Error.WriteLine(format, arg);
         }
 
+        static int GitExitCode = 0;
 
         static int Main(string[] args)
         {
@@ -89,10 +90,12 @@ namespace GitBifrost
 
         static int HookPush(string[] args)
         {
+            IStore store = new StoreFileSystem();
+
             string arg_branch = args[1].TrimEnd('/');
             string arg_remote = args[2].TrimEnd('/');
 
-            if (Directory.Exists(DefaultLocalDataLocation))
+            if (Directory.Exists(LocalStoreLocation))
             {
                 LogLine("Bifrost: Updating datastore(s) for remote '{0}'", arg_remote);
 
@@ -104,7 +107,7 @@ namespace GitBifrost
                     string store_url = store_data["url"].TrimEnd('/');
                     string store_remote_url = store_data["remote"].TrimEnd('/');    
 
-                    if (store_remote_url != arg_remote || !Directory.Exists(store_url))
+                    if (store_remote_url != arg_remote || !store.HasValidEndpoint(store_url))
                     {
                         continue;
                     }
@@ -116,40 +119,30 @@ namespace GitBifrost
                     int files_skipped_late = 0;
 
 
-                    string[] source_files = Directory.GetFiles(DefaultLocalDataLocation);
+                    string[] source_files = Directory.GetFiles(LocalStoreLocation);
 
                     foreach (string file in source_files)
                     {
                         string filename = Path.GetFileName(file);
 
-                        string dest_filepath = Path.Combine(store_url, filename);
+                        SyncResult result = store.PushFile(file, store_remote_url, filename);
 
-                        if (!File.Exists(dest_filepath))
+                        if (result == SyncResult.Failed)
                         {
-                            Guid guid = Guid.NewGuid();
-
-                            string temp_file = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
-
-                            string dest_filepath_temp = Path.Combine(store_url, temp_file);
-
-                            File.Copy(file, dest_filepath_temp);                    
-
-                            if (!File.Exists(dest_filepath))
-                            {
-                                File.Move(dest_filepath_temp, dest_filepath);
-                                ++files_pushed;
-                            }
-                            else
-                            {
-                                File.Delete(temp_file);
-                                ++files_skipped_late;
-                            }
+                            LogLine("Failed to push file {0} to {1}", file, store_remote_url);
+                            return 1;
                         }
-                        else
+                        else if (result == SyncResult.Success)
                         {
-                            // TODO: Safety check for comparing size of local file to hash file (incase of collision)
-
-                            files_skipped++;
+                            ++files_pushed;
+                        }
+                        else if (result == SyncResult.Skipped)
+                        {
+                            ++files_skipped;
+                        }
+                        else if (result == SyncResult.SkippedLate)
+                        {
+                            ++files_skipped_late;
                         }
                     }
 
@@ -206,27 +199,6 @@ namespace GitBifrost
             return 0;
         }
 
-        static void WriteToLocalStore(Stream file_stream, string filename)
-        {
-            string filepath = Path.Combine(DefaultLocalDataLocation, filename);
-
-            if (!File.Exists(filepath))
-            {
-                Directory.CreateDirectory(DefaultLocalDataLocation);
-
-                using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
-                {
-                    file_stream.CopyTo(output_stream);
-
-                    LogLine("Bifrost: Local store - updated {0}", filepath);
-                }
-            }
-            else
-            {
-                LogLine("Bifost: Local store - skipped");
-            }
-        }
-
         static int FilterSmudge(string[] args)
         {
 //            Debugger.Break();
@@ -256,24 +228,25 @@ namespace GitBifrost
 			string[] loaded_stores = GitConfigGetRegex(@".*\.url", ".gitbifrost");
 
             string[] data_stores = new string[loaded_stores.Length + 1];
-            data_stores[0] = DefaultLocalDataLocation;
+            data_stores[0] = LocalStoreLocation;
 
             int index = 1;
-            foreach(string store in loaded_stores)
+            foreach(string store_url in loaded_stores)
             {
-                string[] store_tokens = store.Split(new char[] {' '}, 2);
+                string[] store_tokens = store_url.Split(new char[] {' '}, 2);
                 data_stores[index++] = store_tokens[1];
             }
 
             bool succeeded = false;
 
-            foreach (string datastore_location in data_stores)
-            {            
-                string input_filepath = Path.Combine(datastore_location, input_filename);       
+            IStore store = new StoreFileSystem();
 
-                if (File.Exists(input_filepath))
+            foreach (string datastore_location in data_stores)
+            {
+                byte[] file_contents = store.PullFile(datastore_location, input_filename);
+
+                if (file_contents != null)
                 {
-                    byte[] file_contents = File.ReadAllBytes(input_filepath);
                     int loaded_file_size = file_contents.Length;
 
                     byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
@@ -339,25 +312,23 @@ namespace GitBifrost
 
         static int Clone(string[] args)
         {
-            string arg_remote = args[1];
-            string arg_directory = args.Length > 2 ? args[2] : "./";
+            string clone_args = string.Join(" ", args, 1, args.Length - 2);
 
-            Git("clone", "--no-checkout", arg_remote, arg_directory);
+            Git("clone", "--no-checkout", clone_args);
 
-            Directory.SetCurrentDirectory(arg_directory);
+            if (GitExitCode == 0)
+            {
+                string arg_remote = args[args.Length - 2];
+                string arg_directory = args.Length > 2 ? args[args.Length - 1] : "./";
 
-            GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
-            GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
-            GitConfigSet("filter.bifrost.required", "true");
+                Directory.SetCurrentDirectory(arg_directory);
 
-            File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
-            Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
-            File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
-            Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+                InstallBifrost();
 
-            Git("checkout");
+                Git("checkout");
+            }
 
-            return 0;
+            return GitExitCode;
         }
 
         static int Activate(string[] args)
@@ -368,16 +339,11 @@ namespace GitBifrost
                 return 1;
             }
 
-            GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
-            GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
-            GitConfigSet("filter.bifrost.required", "true");
+            InstallBifrost();
 
-			File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
-			Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
-			File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
-			Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+            // Generate sample config
 
-            //SetConfig("localstore.slim", "true", ".gitbifrost");
+            GitConfigSet("localstore.depth", "0", ".gitbifrost");
 
             GitConfigSet("store.luminawesome.mac.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
             GitConfigSet("store.luminawesome.mac.url", "/Users/kylerocha/dev/BifrostTestCDN", ".gitbifrost");    
@@ -404,6 +370,56 @@ namespace GitBifrost
             return 0;
         }
 
+        static int InstallBifrost()
+        {
+            GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
+            if (GitExitCode != 0) { return GitExitCode; }
+
+            GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
+            if (GitExitCode != 0) { return GitExitCode; }
+
+            GitConfigSet("filter.bifrost.required", "true");
+            if (GitExitCode != 0) { return GitExitCode; }
+
+            try
+            {
+                File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
+                Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
+                File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
+                Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+            }
+            catch
+            {
+                return 1;
+            }
+
+            return 0;
+        }
+
+        static void WriteToLocalStore(Stream file_stream, string filename)
+        {
+            string filepath = Path.Combine(LocalStoreLocation, filename);
+
+            if (!File.Exists(filepath))
+            {
+                if (!Directory.Exists(LocalStoreLocation))
+                {
+                    Directory.CreateDirectory(LocalStoreLocation);
+                }
+
+                using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
+                {
+                    file_stream.CopyTo(output_stream);
+
+                    LogLine("Bifrost: Local store - updated {0}", filepath);
+                }
+            }
+            else
+            {
+                LogLine("Bifost: Local store - skipped");
+            }
+        }
+
         static StoreContainer GetStores()
         {
             StoreContainer stores = new StoreContainer();
@@ -417,15 +433,15 @@ namespace GitBifrost
                 string store_name = Path.GetFileNameWithoutExtension(store_kv[0]);
                 string key = Path.GetExtension(store_kv[0]).Substring(1);
 
-                StoreData store = null;
+                StoreData store_data = null;
 
-                if (!stores.TryGetValue(store_name, out store))
+                if (!stores.TryGetValue(store_name, out store_data))
                 {
-                    store = new StoreData();
-                    stores[store_name] = store;
+                    store_data = new StoreData();
+                    stores[store_name] = store_data;
                 }
 
-                store[key] = store_kv[1];
+                store_data[key] = store_kv[1];
             }
 
             return stores;
@@ -446,7 +462,7 @@ namespace GitBifrost
 
             string command = string.Format("config --get-regexp {0} {1}", fileArg, key);
 
-            return Git(command).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);;
+            return Git(command).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
         static string Git(params string[] arguments)
@@ -465,6 +481,9 @@ namespace GitBifrost
                 output = process.StandardOutput.ReadToEnd();
                 process.WaitForExit();
             }
+
+            GitExitCode = process.ExitCode;
+
             return output;
         }
     }
