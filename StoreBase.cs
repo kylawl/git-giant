@@ -15,7 +15,7 @@ namespace GitBifrost
         SkippedLate = 4
     }
 
-    interface IStore
+    interface IStoreInterface
     {
         bool IsStoreAvailable(Uri store_location);
         bool FileExists(string url, string filename);

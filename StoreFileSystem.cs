@@ -5,7 +5,7 @@ using System.IO;
 
 namespace GitBifrost
 {
-    class StoreFileSystem : IStore
+    class StoreFileSystem : IStoreInterface
     {
         public bool IsStoreAvailable(Uri store_location)
         {
