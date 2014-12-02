@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
+
+using System;
 
 namespace GitBifrost
 {
