@@ -1,4 +1,6 @@
-﻿using System;
+﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
+
+using System;
 
 namespace GitBifrost
 {
@@ -13,11 +15,19 @@ namespace GitBifrost
         SkippedLate = 4
     }
 
-    interface IStore
+    interface IStoreInterface
     {
-        bool HasValidEndpoint(string url);
+        bool IsStoreAvailable(Uri store_location);
         bool FileExists(string url, string filename);
-        SyncResult PushFile(string localfilepath, string url, string filename);
+
+        /// <summary>
+        /// Pushs the file to a datastore
+        /// </summary>
+        /// <returns>Result of the update operation</returns>
+        /// <param name="localfilepath">Where to find the local file</param>
+        /// <param name="store_location">The location of the store</param>
+        /// <param name="filename">The file name to write to in the store</param>
+        SyncResult PushFile(string localfilepath, Uri store_location, string filename);
         byte[] PullFile(string url, string filename);
     }
 }

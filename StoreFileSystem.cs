@@ -1,18 +1,15 @@
-﻿using System;
+﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
+
+using System;
 using System.IO;
 
 namespace GitBifrost
 {
-    class StoreFileSystem : IStore
+    class StoreFileSystem : IStoreInterface
     {
-        public StoreFileSystem()
+        public bool IsStoreAvailable(Uri store_location)
         {
-
-        }
-
-        public bool HasValidEndpoint(string url)
-        {
-            return Directory.Exists(url);
+            return store_location.Scheme == Uri.UriSchemeFile && Directory.Exists(store_location.LocalPath);
         }
 
         public bool FileExists(string url, string filename)
@@ -21,9 +18,9 @@ namespace GitBifrost
             return File.Exists(filepath);
         }
 
-        public SyncResult PushFile(string localfilepath, string url, string filename)
+        public SyncResult PushFile(string localfilepath, Uri store_location, string filename)
         {
-            string store_filepath = Path.Combine(url, filename);
+            string store_filepath = Path.Combine(store_location.LocalPath, filename);
 
             try
             {
@@ -32,7 +29,7 @@ namespace GitBifrost
                     Guid guid = Guid.NewGuid();
 
                     string store_filename_temp = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
-                    string store_filepath_temp = Path.Combine(url, store_filename_temp);
+                    string store_filepath_temp = Path.Combine(store_location.LocalPath, store_filename_temp);
 
                     File.Copy(localfilepath, store_filepath_temp);
 
@@ -44,7 +41,7 @@ namespace GitBifrost
                     else
                     {
                         File.Delete(store_filepath);
-                        return SyncResult.Skipped;
+                        return SyncResult.SkippedLate;
                     }
                 }
             }
@@ -55,7 +52,7 @@ namespace GitBifrost
 
             // TODO: Safety check for comparing size of local file to hash file (incase of collision)
 
-            return SyncResult.SkippedLate;
+            return SyncResult.Skipped;
         }
 
         public byte[] PullFile(string url, string filename)
