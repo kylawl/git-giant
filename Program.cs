@@ -18,6 +18,8 @@ namespace GitBifrost
 
     class Program
     {
+        const int Version = 1;
+
         const int StartingBufferSize = 1024 * 1024;
 
         const string LocalStoreLocation = ".git/bifrost/data";
@@ -65,7 +67,7 @@ namespace GitBifrost
 //            Uri localfile2 = new Uri("file:///local_directory/some_path/to/thisfile.bin");
 //            Uri ip = new Uri("ftp://192.168.50.1:2432/some_path/to/thisfile.bin");
 //            Uri sftp = new Uri("sftp://192.168.50.1:24/some_path/to/thisfile.bin");
-
+//
             int result = 0;
 
             using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
@@ -108,6 +110,23 @@ namespace GitBifrost
         {
             string arg_remote_name = args[1];
             Uri arg_remote_uri = new Uri(args[2]);
+
+            using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
+            {
+                string line = null;
+                do
+                {
+                    line = stdin.ReadLine();
+
+                    if (line != null)
+                    {
+                        LogLine(line);
+                    }
+                }
+                while(line != null);
+            }
+
+            return 1;
 
             // TODO: If there directory doesn't exist BUT the stuff we're about to push includes files that should be in there,
             // something has gone very wrong. You should probably warn the user.
@@ -207,6 +226,7 @@ namespace GitBifrost
 
             using (StreamWriter output_writer = new StreamWriter(Console.OpenStandardOutput()))
             {
+                output_writer.WriteLine("git-bifrost {0}", Version);
                 output_writer.WriteLine(file_hash);
                 output_writer.WriteLine(file_stream.Length);
             }
@@ -242,6 +262,7 @@ namespace GitBifrost
 
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
+                input_reader.ReadLine(); // First line is currently unused "git-bifrost <version number>"   
                 expected_file_hash = input_reader.ReadLine(); 
                 expected_file_size = int.Parse(input_reader.ReadLine());
             }
