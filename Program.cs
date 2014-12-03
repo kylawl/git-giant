@@ -72,10 +72,6 @@ namespace GitBifrost
 
             using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
             {
-                LogLine("------ Bifrost: {0} ------", string.Join(" ", args));
-                LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
-//                LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
-
                 Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
                 Commands["hook-sync"] = HookSync;
@@ -85,14 +81,22 @@ namespace GitBifrost
                 Commands["help"] = Help;
                 Commands["clone"] = Clone;
                 Commands["init"] = Init;
-                Commands["activate"] = Activate;
+                Commands["activate"] = Activate;                
 
 
                 string arg_command = args.Length > 0 ? args[0].ToLower() : null;
 
                 if (arg_command != null)
                 {
+                    LogLine("------ Bifrost: {0} ------", string.Join(" ", args));
+                    // LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
+                    // LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
+
                     result = Commands[arg_command](args);
+                }
+                else
+                {
+                    Help(args);
                 }
 
                 LogLine("");
@@ -347,6 +351,16 @@ namespace GitBifrost
 
         static int Help(string[] args)
         {
+            LogLine("usage: git-bifrost <command> [options]");
+            LogLine("");
+            LogLine("Commands:");
+            LogLine("   activate    installs git-bifrost into the current git repo");
+            LogLine("   clone       like a normal git-clone but installs git-bifrost prior to checkout");
+            LogLine("   init        like a normal git-init but installs git-bifrost as well");
+
+
+
+
             return 0;
         }
 
