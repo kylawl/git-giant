@@ -8,7 +8,9 @@ using System.Security.Cryptography;
 using System.Collections.Generic;
 using System.Threading;
 
+#if __MonoCS__
 using Mono.Unix.Native;
+#endif // __MonoCS__
 
 namespace GitBifrost
 {
@@ -463,9 +465,12 @@ namespace GitBifrost
             try
             {
                 File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
-                Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
                 File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
+
+#if __MonoCS__
+                Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
                 Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+#endif // __MonoCS__
             }
             catch
             {
