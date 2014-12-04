@@ -22,52 +22,14 @@ namespace GitBifrost
     class Program
     {
         const int Version = 1;
-
         const int StartingBufferSize = 1024 * 1024;
-
         const string LocalStoreLocation = "./.git/bifrost/data";
-
         const string GitEmptySha = "0000000000000000000000000000000000000000";
-
-        static readonly string[] StandardAttributes = new string[]
-        {
-            "*.bmp filter=bifrost",
-            "*.dae filter=bifrost",
-            "*.fbx filter=bifrost",
-            "*.jpg filter=bifrost",
-            "*.max filter=bifrost",
-            "*.obj filter=bifrost",
-            "*.png filter=bifrost",
-            "*.psd filter=bifrost",
-            "*.tga filter=bifrost",
-            "*.ttf filter=bifrost",
-            "*.ztl filter=bifrost",
-        };
+        const int Succeeded = 1;
+        const int Failed = 1;
 
         static StreamWriter LogWriter = null;
         static int GitExitCode = 0;
-
-        public static void LogLine(string format, params object[] arg)
-        {
-            try
-            {
-                LogWriter.WriteLine(format, arg);
-                Console.Error.WriteLine(format, arg);
-            }
-            catch
-            {
-
-            }
-        }
-
-        static Dictionary<string, IStoreInterface> GetStoreInterfaces()
-        {
-            var store_interfaces = new Dictionary<string, IStoreInterface>();
-
-            store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
-
-            return store_interfaces;
-        }
 
         static int Main(string[] args)
         {
@@ -80,7 +42,7 @@ namespace GitBifrost
 //            Uri ip = new Uri("ftp://192.168.50.1:2432/some_path/to/thisfile.bin");
 //            Uri sftp = new Uri("sftp://192.168.50.1:24/some_path/to/thisfile.bin");
 //
-            int result = 0;
+            int result = Succeeded;
 
             using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
             {
@@ -117,7 +79,7 @@ namespace GitBifrost
 
         static int HookSync(string[] args)
         {
-            return 0;
+            return Succeeded;
         }
 
         /// <summary>
@@ -150,7 +112,7 @@ namespace GitBifrost
 
             //TODO: Check the file type, we shouldn't be adding everything
 //            LogLine("!!!!TODO: Check the file type, we shouldn't be adding everything.!!!!");
-//            return 1;
+//            return Failed;
 
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
@@ -174,7 +136,7 @@ namespace GitBifrost
 
                             Process git_proc = StartGit("rev-list", rev_list_range);
 
-                            if (git_proc == null) { return 1; }
+                            if (git_proc == null) { return Failed; }
 
                             string rev_line = null;
 
@@ -192,7 +154,7 @@ namespace GitBifrost
                         {
                             Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
 
-                            if (git_proc == null) { return 1; }
+                            if (git_proc == null) { return Failed; }
 
                             string status = null;
                             while ((status = ReadToEscape(git_proc.StandardOutput)) != null)
@@ -200,7 +162,7 @@ namespace GitBifrost
                                 if (status == "X")
                                 {
                                     LogLine("According to git something has gone wrong.");
-                                    return 1;
+                                    return Failed;
                                 }
                                     
                                 if (status != "D" && status != "U")
@@ -210,7 +172,7 @@ namespace GitBifrost
                                         string file = ReadToEscape(git_proc.StandardOutput);
 
                                         Process git_check_attr = StartGit("check-attr -z filter", file);
-                                        if (git_check_attr == null) { return 1; }
+                                        if (git_check_attr == null) { return Failed; }
 
                                         git_check_attr.StandardOutput.ReadLine(); // File name
                                         git_check_attr.StandardOutput.ReadLine(); // Attribute (filter)
@@ -224,7 +186,7 @@ namespace GitBifrost
                                     catch
                                     {
                                         LogLine("Failed to get file from diff-tree");
-                                        return 1;
+                                        return Failed;
                                     }
                                 }
                             }
@@ -245,13 +207,13 @@ namespace GitBifrost
             if (file_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
                 LogLine("Bifrost: Local store missing");
-                return 1;
+                return Failed;
             }
 
             if (file_revs.Count == 0)
             {
                 LogLine("Bifrost: no files to push");
-                return 0;
+                return Succeeded;
             }
 
             //
@@ -296,7 +258,7 @@ namespace GitBifrost
                     if (!git_proc.Start())
                     {
                         LogLine("Bifrost: Couldn't start git.");
-                        return 1;
+                        return Failed;
                     }
 
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
@@ -314,7 +276,7 @@ namespace GitBifrost
                     if (result == SyncResult.Failed)
                     {
                         LogLine("Bifrost: Failed to push file {0} to {1}", mangled_filepath, store_remote_uri.AbsolutePath);
-                        return 1;
+                        return Failed;
                     }
                     else if (result == SyncResult.Success)
                     {
@@ -334,7 +296,7 @@ namespace GitBifrost
             }
 
             
-            return 0;
+            return Succeeded;
         }
 
         /// <summary>
@@ -350,7 +312,7 @@ namespace GitBifrost
             }
             else
             {
-                return 1;
+                return Failed;
             }
 
             MemoryStream file_stream = new MemoryStream(StartingBufferSize);
@@ -381,7 +343,7 @@ namespace GitBifrost
 
             WriteToLocalStore(file_stream, output_filename);
 
-            return 0;
+            return Succeeded;
         }
 
         static string ReadToEscape(StreamReader reader)
@@ -424,7 +386,7 @@ namespace GitBifrost
             }
             else
             {
-                return 1;
+                return Failed;
             }
 
             string expected_file_hash = null;
@@ -529,7 +491,7 @@ namespace GitBifrost
                 LogLine("Bifrost: Failed to get file '{0}'", arg_filepath);
             }
 
-            return succeeded ? 0 : 1;
+            return succeeded ? Succeeded : Failed;
         }
 
         static int Help(string[] args)
@@ -541,7 +503,7 @@ namespace GitBifrost
             LogLine("   clone       like a normal git-clone but installs git-bifrost prior to checkout");
             LogLine("   init        like a normal git-init but installs git-bifrost as well");
 
-            return 0;
+            return Succeeded;
         }
 
         static int Clone(string[] args)
@@ -592,7 +554,7 @@ namespace GitBifrost
             if (!Directory.Exists(".git"))
             {
                 Console.WriteLine("No git repository at '{0}'", Directory.GetCurrentDirectory());
-                return 1;
+                return Failed;
             }
 
             InstallBifrost();
@@ -618,12 +580,30 @@ namespace GitBifrost
             if (args.Contains("-ica", StringComparer.CurrentCultureIgnoreCase) ||
                 args.Contains("--include-common-attributes", StringComparer.CurrentCultureIgnoreCase))
             {
-                File.WriteAllLines(".gitattributes", StandardAttributes);
+                File.WriteAllLines(".gitattributes", new string[]
+                {
+                    "*.bmp filter=bifrost",
+                    "*.dae filter=bifrost",
+                    "*.fbx filter=bifrost",
+                    "*.jpg filter=bifrost",
+                    "*.ma filter=bifrost",
+                    "*.max filter=bifrost",
+                    "*.mb filter=bifrost",
+                    "*.mp3 filter=bifrost",
+                    "*.obj filter=bifrost",
+                    "*.ogg filter=bifrost",
+                    "*.png filter=bifrost",
+                    "*.psd filter=bifrost",
+                    "*.tga filter=bifrost",
+                    "*.ttf filter=bifrost",
+                    "*.ztl filter=bifrost",
+                    "*.wav filter=bifrost",
+                });
             }
 
             Console.WriteLine("Bifrost is now active");
 
-            return 0;
+            return Succeeded;
         }
 
         static int InstallBifrost()
@@ -649,10 +629,10 @@ namespace GitBifrost
             }
             catch
             {
-                return 1;
+                return Failed;
             }
 
-            return 0;
+            return Succeeded;
         }
 
         static void WriteToLocalStore(Stream file_stream, string filename)
@@ -677,6 +657,29 @@ namespace GitBifrost
             {
                 LogLine("Bifost: Local store - skipped");
             }
+        }
+
+
+        public static void LogLine(string format, params object[] arg)
+        {
+            try
+            {
+                LogWriter.WriteLine(format, arg);
+                Console.Error.WriteLine(format, arg);
+            }
+            catch
+            {
+
+            }
+        }
+
+        static Dictionary<string, IStoreInterface> GetStoreInterfaces()
+        {
+            var store_interfaces = new Dictionary<string, IStoreInterface>();
+
+            store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
+
+            return store_interfaces;
         }
 
         static StoreContainer GetStores()
