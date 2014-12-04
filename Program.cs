@@ -149,6 +149,10 @@ namespace GitBifrost
 
             var file_revs = new List<Tuple<string, string>>();
 
+            //TODO: Check the file type, we shouldn't be adding everything
+            LogLine("!!!!TODO: Check the file type, we shouldn't be adding everything.!!!!");
+            return 1;
+
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
                 string push_info = null;
@@ -170,7 +174,7 @@ namespace GitBifrost
 
                         if (GitExitCode != 0) { return GitExitCode; }
 
-                        string[] rev_ids  = rev_list_result.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+                        string[] rev_ids  = rev_list_result.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);                     
 
                         foreach(string revision in rev_ids)
                         {
@@ -193,7 +197,6 @@ namespace GitBifrost
                                     try
                                     {
                                         string file = file_change.Split(new char[] { '\t' }, 2, StringSplitOptions.RemoveEmptyEntries)[1];
-
                                         file_revs.Add(new Tuple<string, string>(revision, file));
                                     }
                                     catch
