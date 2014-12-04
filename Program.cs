@@ -19,6 +19,12 @@ namespace GitBifrost
     class StoreContainer : Dictionary<string, StoreData> { }
     delegate int CommandDelegate(string[] args);
 
+    enum LogNoiseLevel
+    {
+        Normal,
+        Loud
+    }
+
     class Program
     {
         const int Version = 1;
@@ -30,6 +36,7 @@ namespace GitBifrost
 
         static StreamWriter LogWriter = null;
         static int GitExitCode = 0;
+        static LogNoiseLevel NoiseLevel = LogNoiseLevel.Loud;
 
         static int Main(string[] args)
         {
@@ -110,10 +117,6 @@ namespace GitBifrost
 
             var file_revs = new List<Tuple<string, string>>();
 
-            //TODO: Check the file type, we shouldn't be adding everything
-//            LogLine("!!!!TODO: Check the file type, we shouldn't be adding everything.!!!!");
-//            return Failed;
-
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
                 string push_info = null;
@@ -122,15 +125,16 @@ namespace GitBifrost
                     LogLine("Bifrost: push info ({0})", push_info);
                     string[] push_tokens = push_info.Split(' ');
 
-                    string local_ref = push_tokens[0];
+//                     string local_ref = push_tokens[0];
                     string local_sha = push_tokens[1];
-                    string remote_ref = push_tokens[2];
+//                     string remote_ref = push_tokens[2];
                     string remote_sha = push_tokens[3];
 
                     if (local_sha != GitEmptySha)
                     {
                         var rev_ids = new List<string>();
 
+                        // Get the individual revision ids between you and the remote
                         {
                             string rev_list_range = remote_sha != GitEmptySha ? string.Format("{0}..{1}", remote_sha, local_sha) : local_sha;
 
@@ -145,14 +149,13 @@ namespace GitBifrost
                                 rev_ids.Add(rev_line);
                             }
 
-                            git_proc.WaitForExit();
-
-                            if (git_proc.ExitCode != 0) { return git_proc.ExitCode; }
+                            if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
                         }
 
                         foreach (string revision in rev_ids)
                         {
-                            Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
+                            // Get files modified in this revision
+                            Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision); 
 
                             if (git_proc == null) { return Failed; }
 
@@ -165,6 +168,7 @@ namespace GitBifrost
                                     return Failed;
                                 }
                                     
+                                // Skip files that have been deleted or require merging
                                 if (status != "D" && status != "U")
                                 {
                                     try
@@ -191,9 +195,7 @@ namespace GitBifrost
                                 }
                             }
 
-                            git_proc.WaitForExit();
-
-                            if (git_proc.ExitCode != 0) { return git_proc.ExitCode; }
+                            if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
                         }
                     }
                     else
@@ -253,22 +255,17 @@ namespace GitBifrost
                 {
                     string rile_rev_string = string.Format("{0}:{1}", file_rev.Item1, file_rev.Item2);
 
-                    Process git_proc = NewGit("show " + rile_rev_string);
+                    Process git_proc = StartGit("show ", rile_rev_string);
 
-                    if (!git_proc.Start())
-                    {
-                        LogLine("Bifrost: Couldn't start git.");
-                        return Failed;
-                    }
+                    if (git_proc == null) { return Failed; }
 
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
                     string file_sha = git_proc.StandardOutput.ReadLine();
                     int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
-                    
-                    git_proc.WaitForExit();
+
+                    if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
 
                     string mangled_filename = string.Format("{0}-{1}.bin", file_sha, Path.GetFileName(bifrost_ver));
-
                     string mangled_filepath = Path.Combine(LocalStoreLocation, mangled_filename);
 
                     SyncResult result = store_interface.PushFile(mangled_filepath, store_uri, mangled_filename);
@@ -292,7 +289,14 @@ namespace GitBifrost
                     }
                 }
 
-                LogLine("Bifrost: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
+                if (NoiseLevel == LogNoiseLevel.Normal)
+                {
+                    LogLine("Bifrost: {0} Copied, {1} Skipped", files_pushed, files_skipped + files_skipped_late);
+                }
+                else if (NoiseLevel == LogNoiseLevel.Loud)
+                {
+                    LogLine("Bifrost: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
+                }
             }
 
             
@@ -335,9 +339,12 @@ namespace GitBifrost
                 output_writer.WriteLine(file_stream.Length);
             }
 
-            LogLine("Name: {0}", arg_filepath);
-            LogLine("Bytes: {0}", file_stream.Length);
-            LogLine("Hash: {0}", file_hash);
+            if (NoiseLevel == LogNoiseLevel.Loud)
+            {
+                LogLine("Name: {0}", arg_filepath);
+                LogLine("Bytes: {0}", file_stream.Length);
+                LogLine("Hash: {0}", file_hash);
+            }
 
             string output_filename = String.Format("{0}-{1}.bin", file_hash, Path.GetFileName(arg_filepath));           
 
@@ -436,11 +443,15 @@ namespace GitBifrost
                         byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
                         string loaded_file_hash = BitConverter.ToString(loaded_file_hash_bytes).Replace("-", "");
 
-                        LogLine("Name: {0}", arg_filepath);
-                        LogLine("Expect Hash: {0}", expected_file_hash);
-                        LogLine("Loaded Hash: {0}", loaded_file_hash);
-                        LogLine("Expected Size: {0}", expected_file_size);
-                        LogLine("Loaded Size: {0}", loaded_file_size);
+                        if (NoiseLevel == LogNoiseLevel.Loud)
+                        {
+                            LogLine("Repo File: {0}", arg_filepath);
+                            LogLine("Store Name: {0}", input_filename);
+                            LogLine("Expect Hash: {0}", expected_file_hash);
+                            LogLine("Loaded Hash: {0}", loaded_file_hash);
+                            LogLine("Expected Size: {0}", expected_file_size);
+                            LogLine("Loaded Size: {0}", loaded_file_size);
+                        }
 
                         //
                         // Safety checking size and hash
@@ -770,4 +781,14 @@ namespace GitBifrost
             return output;
         }
     }
+
+    static class ProcessEx
+    {
+        public static int WaitForExitCode(this Process self)
+        {
+            self.WaitForExit();
+            return self.ExitCode;
+        }
+    }
+    
 }
