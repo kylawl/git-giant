@@ -26,6 +26,8 @@ namespace GitBifrost
 
         const string LocalStoreLocation = ".git/bifrost/data";
 
+        const string GitEmptySha = "0000000000000000000000000000000000000000";
+
         static readonly string[] StandardAttributes = new string[]
         {
             "*.bmp filter=bifrost",
@@ -46,8 +48,15 @@ namespace GitBifrost
 
         public static void LogLine(string format, params object[] arg)
         {
-            LogWriter.WriteLine(format, arg);
-            Console.Error.WriteLine(format, arg);
+            try
+            {
+                LogWriter.WriteLine(format, arg);
+                Console.Error.WriteLine(format, arg);
+            }
+            catch
+            {
+
+            }
         }
 
         static Dictionary<string, IStoreInterface> GetStoreInterfaces()
@@ -112,97 +121,187 @@ namespace GitBifrost
             return 0;
         }
 
+        /// <summary>
+        /// </summary>
+        /// <param name="args"></param>
+        /// <returns></returns>
         static int HookPush(string[] args)
         {
+            // This hook is called with the following parameters:
+            // 
+            // $1 -- Name of the remote to which the push is being done
+            // $2 -- URL to which the push is being done
+            // 
+            // If pushing without using a named remote those arguments will be equal.
+            // 
+            // Information about the commits which are being pushed is supplied as lines to
+            // the standard input in the form:
+            // 
+            //   <local ref> <local sha1> <remote ref> <remote sha1>
+
             string arg_remote_name = args[1];
             Uri arg_remote_uri = new Uri(args[2]);
 
+
+            //
+            // Collect up all the file revisions we need to push
+            //
+
+            var file_revs = new List<Tuple<string, string>>();
+
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
-                string line = null;
-                do
+                string push_info = null;
+                while ((push_info = stdin.ReadLine()) != null)
                 {
-                    line = stdin.ReadLine();
+                    LogLine("Bifrost: push info ({0})", push_info);
+                    string[] push_tokens = push_info.Split(' ');
 
-                    if (line != null)
+                    string local_ref = push_tokens[0];
+                    string local_sha = push_tokens[1];
+                    string remote_ref = push_tokens[2];
+                    string remote_sha = push_tokens[3];
+
+                    if (local_sha != GitEmptySha)
                     {
-                        LogLine(line);
+                        string rev_list_range = remote_sha != GitEmptySha ? string.Format("{0}..{1}", remote_sha, local_sha) : local_sha;
+
+                        string rev_list_result = Git("rev-list", rev_list_range);
+
+                        if (GitExitCode != 0) { return GitExitCode; }
+
+                        string[] rev_ids  = rev_list_result.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+
+                        foreach(string revision in rev_ids)
+                        {
+                            string gitresponse = Git("diff-tree", "--no-commit-id", "--name-status", "-r", revision);
+
+                            if (GitExitCode != 0) { return GitExitCode; }
+
+                            foreach(string file_change in gitresponse.Split(new string[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                char status = file_change[0];
+                                
+                                if (status == 'X')
+                                {
+                                    LogLine("According to git something has gone wrong.");
+                                    return 1;
+                                }
+
+                                if (status != 'D' && status != 'U')
+                                {
+                                    try
+                                    {
+                                        string file = file_change.Split(new char[] { '\t' }, 2, StringSplitOptions.RemoveEmptyEntries)[1];
+
+                                        file_revs.Add(new Tuple<string, string>(revision, file));
+                                    }
+                                    catch
+                                    {
+                                        LogLine("Failed to get file from diff-tree");
+                                        return 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Empty
+                        // Commit deleted?
                     }
                 }
-                while(line != null);
+            }            
+
+            if (file_revs.Count >0 && !Directory.Exists(LocalStoreLocation))
+            {
+                LogLine("Bifrost: Local store missing.");
+                return 1;
             }
 
             return 1;
+            
+            LogLine("Bifrost: Updating datastore(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_uri.AbsoluteUri);
 
-            // TODO: If there directory doesn't exist BUT the stuff we're about to push includes files that should be in there,
-            // something has gone very wrong. You should probably warn the user.
-            if (Directory.Exists(LocalStoreLocation))
+            var store_interfaces = GetStoreInterfaces();
+            StoreContainer store_infos = GetStores();
+
+            foreach (KeyValuePair<string, StoreData> store_kvp in store_infos)
             {
-                LogLine("Bifrost: Updating datastore(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_uri.AbsoluteUri);
+                StoreData store_data = store_kvp.Value;
 
-                var store_interfaces = GetStoreInterfaces();
-                StoreContainer stores = GetStores();
+                Uri store_remote_uri = new Uri(store_data["remote"]);
+                Uri store_uri = new Uri(store_data["url"]);
 
-                foreach (KeyValuePair<string, StoreData> store_kvp in stores)
+                if (store_remote_uri != arg_remote_uri)
                 {
-                    StoreData store_data = store_kvp.Value;
-
-                    Uri store_remote_uri = new Uri(store_data["remote"]);
-                    Uri store_uri = new Uri(store_data["url"]);
-
-                    if (store_remote_uri != arg_remote_uri)
-                    {
-                        continue;
-                    }
-
-                    IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
-                    if (store_interface == null || !store_interface.IsStoreAvailable(store_uri))
-                    {
-                        continue;
-                    }
-
-                    LogLine("Bifrost: Updating store: '{0}'", store_uri.AbsoluteUri);
-
-                    int files_pushed = 0;
-                    int files_skipped = 0;
-                    int files_skipped_late = 0;
-
-                    string[] local_files = Directory.GetFiles(LocalStoreLocation);
-
-                    foreach (string file in local_files)
-                    {
-                        string filename = Path.GetFileName(file);
-
-                        SyncResult result = store_interface.PushFile(file, store_uri, filename);
-
-                        if (result == SyncResult.Failed)
-                        {
-                            LogLine("Bifrost: Failed to push file {0} to {1}", file, store_remote_uri.AbsolutePath);
-                            return 1;
-                        }
-                        else if (result == SyncResult.Success)
-                        {
-                            ++files_pushed;
-                        }
-                        else if (result == SyncResult.Skipped)
-                        {
-                            ++files_skipped;
-                        }
-                        else if (result == SyncResult.SkippedLate)
-                        {
-                            ++files_skipped_late;
-                        }
-                    }
-
-                    LogLine("Bifrost: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
+                    continue;
                 }
+
+                IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
+                if (store_interface == null || !store_interface.IsStoreAvailable(store_uri))
+                {
+                    continue;
+                }
+
+                LogLine("Bifrost: Updating store: '{0}'", store_uri.AbsoluteUri);
+
+                int files_pushed = 0;
+                int files_skipped = 0;
+                int files_skipped_late = 0;                
+
+                foreach (var file_rev in file_revs)
+                {
+                    string rile_rev_string = string.Format("{0}:{1}", file_rev.Item1, file_rev.Item2);
+
+                    Process git_proc = NewGit("show {0}" + rile_rev_string);
+
+                    if (!git_proc.Start())
+                    {
+                        LogLine("Bifrost: Couldn't start git.");
+                        return 1;
+                    }
+
+                    string bifrost_ver = git_proc.StandardOutput.ReadLine();
+                    string file_sha = git_proc.StandardOutput.ReadLine();
+                    int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
+                    
+                    git_proc.WaitForExit();
+
+                    string mangled_filename = string.Format("{0}-{1}.bin", file_sha, Path.GetFileName(bifrost_ver));
+
+                    string mangled_filepath = Path.Combine(LocalStoreLocation, mangled_filename);
+
+                    SyncResult result = store_interface.PushFile(mangled_filepath, store_uri, mangled_filename);
+
+                    if (result == SyncResult.Failed)
+                    {
+                        LogLine("Bifrost: Failed to push file {0} to {1}", mangled_filepath, store_remote_uri.AbsolutePath);
+                        return 1;
+                    }
+                    else if (result == SyncResult.Success)
+                    {
+                        ++files_pushed;
+                    }
+                    else if (result == SyncResult.Skipped)
+                    {
+                        ++files_skipped;
+                    }
+                    else if (result == SyncResult.SkippedLate)
+                    {
+                        ++files_skipped_late;
+                    }
+                }
+
+                LogLine("Bifrost: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
             }
 
+            
             return 0;
         }
 
         /// <summary>
-        /// Updates the local data store with files from a git commit
+        /// Updates the local data store with files from a git commit/add
         /// </summary>       
         static int FilterClean(string[] args)
         {            
@@ -387,13 +486,15 @@ namespace GitBifrost
 
         static int Clone(string[] args)
         {
+            Debugger.Break();
+
             string clone_args = string.Join(" ", args, 1, args.Length - 1);
 
             Git("clone", "--no-checkout", clone_args);
 
             if (GitExitCode == 0)
             {
-                string arg_directory = args.Length > 2 ? args[args.Length - 1] : "./";
+                string arg_directory = args.Length > 2 ? args[args.Length - 1] : Path.GetFileNameWithoutExtension(args[1]);
 
                 Directory.SetCurrentDirectory(arg_directory);
 
@@ -563,15 +664,22 @@ namespace GitBifrost
             return Git(command).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         }
 
-        static string Git(params string[] arguments)
+        static Process NewGit(string arguments)
         {
             Process process = new Process();
             ProcessStartInfo psi = process.StartInfo;
             psi.FileName = "git";
-            psi.Arguments = string.Join(" ", arguments);
+            psi.Arguments = arguments;
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
-            psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\");                   
+            psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\");
+            
+            return process;
+        }
+
+        static string Git(params string[] arguments)
+        {
+            Process process = NewGit(string.Join(" ", arguments));
             
             string output = string.Empty;
             if (process.Start())
