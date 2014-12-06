@@ -27,12 +27,22 @@ namespace GitBifrost
 
     class Program
     {
+        const int Kilobytes = 1024;
+        const int Megabytes = 1024 * 1024;
         const int Version = 1;
         const int StartingBufferSize = 1024 * 1024;
         const string LocalStoreLocation = "./.git/bifrost/data";
         const string GitEmptySha = "0000000000000000000000000000000000000000";
-        const int Succeeded = 1;
+        const int Succeeded = 0;
         const int Failed = 1;
+        const int FirstFewBytes = 8000;
+
+        const string BifrostProxyId = "git-bifrost-proxy-file";
+
+        const string TextSizeThresholdKey = "repo.text-size-threshold";
+        const int DefaultTextSizeThreshold = 5 * Megabytes;
+        const string BinSizeThresholdKey = "repo.bin-size-threshold"; 
+        const int DefaultBinSizeThreshold = 100 * Kilobytes;
 
         static StreamWriter LogWriter = null;
         static int GitExitCode = 0;
@@ -51,18 +61,19 @@ namespace GitBifrost
 //
             int result = Succeeded;
 
-            using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
+//            using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
             {
                 Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
-                Commands["hook-sync"] = HookSync;
-                Commands["hook-push"] = HookPush;
-                Commands["filter-clean"] = FilterClean;
-                Commands["filter-smudge"] = FilterSmudge;
-                Commands["help"] = Help;
-                Commands["clone"] = Clone;
-                Commands["init"] = Init;
-                Commands["activate"] = Activate;                
+                Commands["hook-sync"] = CmdHookSync;
+                Commands["hook-push"] = CmdHookPush;
+                Commands["hook-pre-commit"] = CmdHookPreCommit;
+                Commands["filter-clean"] = CmdFilterClean;
+                Commands["filter-smudge"] = CmdFilterSmudge;
+                Commands["help"] = CmdHelp;
+                Commands["clone"] = CmdClone;
+                Commands["init"] = CmdInit;
+                Commands["activate"] = CmdActivate;                
 
 
                 string arg_command = args.Length > 0 ? args[0].ToLower() : null;
@@ -73,26 +84,24 @@ namespace GitBifrost
                     // LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
                     // LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
 
-                    result = Commands[arg_command](args);
+                    CommandDelegate command;
+                    if (!Commands.TryGetValue(arg_command, out command))
+                    {
+                        command = CmdHelp;
+                    }
+                    result = command(args);
                 }
                 else
                 {
-                    Help(args);
+                    CmdHelp(args);
                 }
             }
 
             return result;
         }
 
-        static int HookSync(string[] args)
+        static int CmdHookSync(string[] args)
         {
-            return Succeeded;
-        }
-
-        static int HookPreCommit(string[] args)
-        {
-
-
             return Succeeded;
         }
 
@@ -100,7 +109,7 @@ namespace GitBifrost
         /// </summary>
         /// <param name="args"></param>
         /// <returns></returns>
-        static int HookPush(string[] args)
+        static int CmdHookPush(string[] args)
         {
             // This hook is called with the following parameters:
             // 
@@ -129,7 +138,9 @@ namespace GitBifrost
                 string push_info = null;
                 while ((push_info = stdin.ReadLine()) != null)
                 {
+
                     LogLine("Bifrost: push info ({0})", push_info);
+
                     string[] push_tokens = push_info.Split(' ');
 
 //                     string local_ref = push_tokens[0];
@@ -167,7 +178,7 @@ namespace GitBifrost
                             if (git_proc == null) { return Failed; }
 
                             string status = null;
-                            while ((status = ReadToEscape(git_proc.StandardOutput)) != null)
+                            while ((status = ReadToNull(git_proc.StandardOutput)) != null)
                             {
                                 if (status == "X")
                                 {
@@ -180,14 +191,9 @@ namespace GitBifrost
                                 {
                                     try
                                     {
-                                        string file = ReadToEscape(git_proc.StandardOutput);
+                                        string file = ReadToNull(git_proc.StandardOutput);
 
-                                        Process git_check_attr = StartGit("check-attr -z filter", file);
-                                        if (git_check_attr == null) { return Failed; }
-
-                                        git_check_attr.StandardOutput.ReadLine(); // File name
-                                        git_check_attr.StandardOutput.ReadLine(); // Attribute (filter)
-                                        string filter_tag = git_check_attr.StandardOutput.ReadLine();
+                                        string filter_tag = GetFilterAttribute(file);
 
                                         if (filter_tag == "bifrost")
                                         {
@@ -196,7 +202,7 @@ namespace GitBifrost
                                     }
                                     catch
                                     {
-                                        LogLine("Failed to get file from diff-tree");
+                                        LogLine("Failed to get file from diff-tree.");
                                         return Failed;
                                     }
                                 }
@@ -260,23 +266,28 @@ namespace GitBifrost
 
                 foreach (var file_rev in file_revs)
                 {
-
                     // Read in the proxy for this revision of the file
                     string rile_rev_string = string.Format("{0}:{1}", file_rev.Item1, file_rev.Item2);
 
-                    Process git_proc = StartGit("show ", rile_rev_string);
+                    Process git_proc = StartGit(string.Format("show \"{0}\"", rile_rev_string));
 
                     if (git_proc == null) { return Failed; }
 
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
+
+                    if (!bifrost_ver.StartsWith(BifrostProxyId))
+                    {
+                        LogLine("Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev.Item2);
+                        return Failed;
+                    }
+
                     string file_sha = git_proc.StandardOutput.ReadLine();
-//                    int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
+                    int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
 
                     if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
 
                     // Build the mangled name
-
-                    string mangled_filename = string.Format("{0}-{1}.bin", file_sha, Path.GetFileName(bifrost_ver));
+                    string mangled_filename = string.Format("{0}-{1}.bin", file_sha, Path.GetFileName(file_rev.Item2));
                     string mangled_filepath = Path.Combine(LocalStoreLocation, mangled_filename);
 
                     SyncResult result = SyncResult.Failed;
@@ -287,12 +298,12 @@ namespace GitBifrost
                     }
                     else
                     {
-                        LogLine("Bifrost: Failed to find revision '{0}' of '{1}' in local store", file_rev.Item1, file_rev.Item2);                       
+                        LogLine("Bifrost: Failed to find revision '{0}' of '{1}' in local store.", file_rev.Item1, file_rev.Item2);                       
                     }
 
                     if (result == SyncResult.Failed)
                     {
-                        LogLine("Bifrost: Failed to push file {0} to {1}", mangled_filepath, store_remote_uri.AbsolutePath);
+                        LogLine("Bifrost: Failed to push file {0} to {1}.", mangled_filepath, store_remote_uri.AbsolutePath);
                         return Failed;
                     }
                     else if (result == SyncResult.Success)
@@ -323,10 +334,89 @@ namespace GitBifrost
             return Succeeded;
         }
 
+        // Check the staged files for things that are too big and/or are binaries
+        static int CmdHookPreCommit(string[] args)
+        {
+            Process git_proc = StartGit("diff --name-only --cached");
+            if (git_proc == null) { return Failed; }
+
+            bool succeeded = true;
+
+            string file = null;
+            while ((file = git_proc.StandardOutput.ReadLine()) != null)
+            {
+                bool bifrost_filtered = GetFilterAttribute(file) == "bifrost";
+
+                Process git_show_proc = StartGit(string.Format("show :\"{0}\"", file));
+                if (git_show_proc == null) { return Failed; }
+
+                if (bifrost_filtered)
+                {
+                    // If the file is already filtered by bifrost, make sure that the staged file is in fact 
+                    // a bifrost proxy file if it isn't the user needs to restage the file in order to allow the clean filter to run.
+
+                    string proxyfile_tag = git_show_proc.StandardOutput.ReadLine();
+
+                    if (!proxyfile_tag.StartsWith(BifrostProxyId))
+                    {
+                        LogLine("Bifrost: You need to restage '{0}'.", file);
+
+                        succeeded = false;
+                    }
+                }
+                else
+                {
+                    bool is_binary = GetAttributeSet(file, "binary");
+                    int size = 0;
+
+                    // Count the bytes & see if this is a binary file
+                    int file_byte = 0;
+                    while ((file_byte = git_show_proc.StandardOutput.Read()) != -1)
+                    {
+                        if (!is_binary && file_byte == 0)
+                        {
+                            is_binary = true;
+                        }
+                        ++size;
+                    }
+
+                    if (git_show_proc.WaitForExitCode() != 0) { return git_show_proc.ExitCode; }
+
+                    int threshold;
+                    if (is_binary)
+                    {
+                        threshold = GitConfigGetInt(BinSizeThresholdKey, DefaultBinSizeThreshold, ".gitbifrost");
+                    }
+                    else
+                    {
+                        threshold = GitConfigGetInt(TextSizeThresholdKey, DefaultTextSizeThreshold, ".gitbifrost");
+                    }
+
+                    if (threshold > -1 && size > threshold)
+                    {
+                        succeeded = false;
+                        string type = is_binary ? "binary" : "text";
+
+                        LogLine("Bifrost: The {0} file '{1}' is too big ({2} bytes)\t. Filter for the file or extention with bifrost in and restage.", 
+                            type, file, size);
+                    }
+                }
+            }
+
+            if (git_proc.WaitForExitCode() != 0) { LogLine("Git failed"); return git_proc.ExitCode; }
+
+            if (!succeeded)
+            {
+                LogLine("Bifrost: Aborting commit.");
+            }
+
+            return succeeded ? Succeeded : Failed;
+        }
+
         /// <summary>
         /// Updates the local data store with files from a git commit/add
         /// </summary>       
-        static int FilterClean(string[] args)
+        static int CmdFilterClean(string[] args)
         {            
             string arg_filepath = null;
 
@@ -347,6 +437,23 @@ namespace GitBifrost
                 file_stream.Position = 0;
             }
 
+            bool is_bifrost_proxy = false;
+
+            using (StreamReader reader = new StreamReader(file_stream))
+            {
+                is_bifrost_proxy = reader.ReadLine().StartsWith(BifrostProxyId);
+            }
+
+            if (is_bifrost_proxy)
+            {
+                // Acording to the git docs, it's possible for a filter to run on the same file multiple times so we need to handle
+                // the case where a proxy is passed in for a clean at some point. So far I've not seen this scenario occur, 
+                // so until it's clear when and why this could happen in our setup, I'll leave this fail condition here to catch it.
+                LogLine("Bifrost: File '{0}' is already bifrost proxy, why are you cleaning again?", arg_filepath);
+
+                return Failed;
+            }
+
             byte[] file_hash_bytes = SHA1.Create().ComputeHash(file_stream);
             string file_hash = BitConverter.ToString(file_hash_bytes).Replace("-", "");
 
@@ -354,16 +461,16 @@ namespace GitBifrost
 
             using (StreamWriter output_writer = new StreamWriter(Console.OpenStandardOutput()))
             {
-                output_writer.WriteLine("git-bifrost {0}", Version);
+                output_writer.WriteLine("{0} {1}", BifrostProxyId, Version);
                 output_writer.WriteLine(file_hash);
                 output_writer.WriteLine(file_stream.Length);
             }
 
             if (NoiseLevel == LogNoiseLevel.Loud)
             {
-                LogLine("Name: {0}", arg_filepath);
+                LogLine(" Name: {0}", arg_filepath);
+                LogLine(" Hash: {0}", file_hash);
                 LogLine("Bytes: {0}", file_stream.Length);
-                LogLine("Hash: {0}", file_hash);
             }
 
             string output_filename = String.Format("{0}-{1}.bin", file_hash, Path.GetFileName(arg_filepath));           
@@ -373,7 +480,7 @@ namespace GitBifrost
             return Succeeded;
         }
 
-        static int FilterSmudge(string[] args)
+        static int CmdFilterSmudge(string[] args)
         {
 //            Debugger.Break();
 
@@ -393,8 +500,14 @@ namespace GitBifrost
 
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
-                input_reader.ReadLine(); // First line is currently unused "git-bifrost <version number>"   
-                expected_file_hash = input_reader.ReadLine(); 
+                string bifrost_ver = input_reader.ReadLine(); // First line is currently unused "git-bifrost-prox-file <version number>"
+
+                if (!bifrost_ver.StartsWith(BifrostProxyId))
+                {
+                    LogLine("Bifrost: '{0}' is not a bifrost proxy file but is being smudged.", arg_filepath);
+                }
+
+                expected_file_hash = input_reader.ReadLine();
                 expected_file_size = int.Parse(input_reader.ReadLine());
             }
 
@@ -406,7 +519,7 @@ namespace GitBifrost
 
 			string[] loaded_stores = GitConfigGetRegex(@".*\.url$", ".gitbifrost");
 
-            Uri[] data_stores = new Uri[1];//loaded_stores.Length + 1];
+            Uri[] data_stores = new Uri[loaded_stores.Length + 1];
             data_stores[0] = new Uri(Path.Combine(Directory.GetCurrentDirectory(), LocalStoreLocation));
 
             int index = 1;
@@ -437,12 +550,12 @@ namespace GitBifrost
 
                         if (NoiseLevel == LogNoiseLevel.Loud)
                         {
-                            LogLine("Repo File: {0}", arg_filepath);
-                            LogLine("Store Name: {0}", input_filename);
-                            LogLine("Expect Hash: {0}", expected_file_hash);
-                            LogLine("Loaded Hash: {0}", loaded_file_hash);
+                            LogLine("    Repo File: {0}", arg_filepath);
+                            LogLine("   Store Name: {0}", input_filename);
+                            LogLine("  Expect Hash: {0}", expected_file_hash);
+                            LogLine("  Loaded Hash: {0}", loaded_file_hash);
                             LogLine("Expected Size: {0}", expected_file_size);
-                            LogLine("Loaded Size: {0}", loaded_file_size);
+                            LogLine("  Loaded Size: {0}", loaded_file_size);
                         }
 
                         //
@@ -482,6 +595,12 @@ namespace GitBifrost
 
                         break;
                     }
+                    else
+                    {
+                        LogLine("Bifrost: Store {0} does not contain file.", store_uri.AbsoluteUri);
+                        LogLine("    Repo File: {0}", arg_filepath);
+                        LogLine("   Store Name: {0}", input_filename);
+                    }
                 }
                 else
                 {
@@ -497,7 +616,7 @@ namespace GitBifrost
             return succeeded ? Succeeded : Failed;
         }
 
-        static int Help(string[] args)
+        static int CmdHelp(string[] args)
         {
             LogLine("usage: git-bifrost <command> [options]");
             LogLine("");
@@ -509,7 +628,7 @@ namespace GitBifrost
             return Succeeded;
         }
 
-        static int Clone(string[] args)
+        static int CmdClone(string[] args)
         {
             string clone_args = string.Join(" ", args, 1, args.Length - 1);
 
@@ -529,7 +648,7 @@ namespace GitBifrost
             return GitExitCode;
         }
 
-        static int Init(string[] args)
+        static int CmdInit(string[] args)
         {
             string init_args = string.Join(" ", args);
 
@@ -550,7 +669,7 @@ namespace GitBifrost
             return GitExitCode;
         }
 
-        static int Activate(string[] args)
+        static int CmdActivate(string[] args)
         {
             if (!Directory.Exists(".git"))
             {
@@ -561,6 +680,9 @@ namespace GitBifrost
             InstallBifrost();
 
             // Generate sample config
+
+            GitConfigSet(TextSizeThresholdKey, DefaultTextSizeThreshold.ToString(), ".gitbifrost");
+            GitConfigSet(BinSizeThresholdKey, DefaultBinSizeThreshold.ToString(), ".gitbifrost");
 
             GitConfigSet("localstore.depth", "0", ".gitbifrost");
 
@@ -638,7 +760,35 @@ namespace GitBifrost
             return Succeeded;
         }
 
-        static string ReadToEscape(StreamReader reader)
+        static string GetFilterAttribute(string file)
+        {
+            Process git_check_attr = StartGit(string.Format("check-attr -z filter \"{0}\"", file));
+            if (git_check_attr == null) { return null; }
+
+            ReadToNull(git_check_attr.StandardOutput); // File name
+            ReadToNull(git_check_attr.StandardOutput); // Attribute (filter)
+            string filter_tag = ReadToNull(git_check_attr.StandardOutput);
+
+            if (git_check_attr.WaitForExitCode() != 0) { return null; }
+
+            return filter_tag;
+        }
+
+        static bool GetAttributeSet(string file, string attribute)
+        {
+            Process git_check_attr = StartGit(string.Format("check-attr -z {0} \"{1}\"", attribute, file));
+            if (git_check_attr == null) { return false; }
+
+            ReadToNull(git_check_attr.StandardOutput); // File name
+            ReadToNull(git_check_attr.StandardOutput); // attribute
+            string value = ReadToNull(git_check_attr.StandardOutput);
+
+            if (git_check_attr.WaitForExitCode() != 0) { return false; }
+
+            return value == "set";
+        }
+
+        static string ReadToNull(StreamReader reader)
         {
             var bytes = new List<byte>();
 
@@ -681,12 +831,12 @@ namespace GitBifrost
                 {
                     file_stream.CopyTo(output_stream);
 
-                    LogLine("Bifrost: Local store - updated {0}", filepath);
+                    LogLine("Bifrost: Local store updated {0}", filepath);
                 }
             }
             else
             {
-                LogLine("Bifost: Local store - skipped");
+                LogLine("Bifrost: Local store skipped");
             }
         }
 
@@ -695,7 +845,7 @@ namespace GitBifrost
         {
             try
             {
-                LogWriter.WriteLine(format, arg);
+//                LogWriter.WriteLine(format, arg);
                 Console.Error.WriteLine(format, arg);
             }
             catch
@@ -769,6 +919,33 @@ namespace GitBifrost
             }
 
             return lines.ToArray();
+        }
+
+        static int GitConfigGetInt(string key, int defaultValue, string file)
+        {
+            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
+
+            Process git_proc = StartGit("config --null --get", fileArg, key);
+
+            if (git_proc == null)
+            {
+                return defaultValue;
+            }
+
+            string value_str = ReadToNull(git_proc.StandardOutput);
+
+            if (git_proc.WaitForExitCode() != 0)
+            {
+                return defaultValue;
+            }
+
+            int value;
+            if (int.TryParse(value_str, out value))
+            {
+                return value;
+            }
+
+            return defaultValue;
         }
 
         static Process NewGit(string arguments)
