@@ -89,6 +89,13 @@ namespace GitBifrost
             return Succeeded;
         }
 
+        static int HookPreCommit(string[] args)
+        {
+
+
+            return Succeeded;
+        }
+
         /// <summary>
         /// </summary>
         /// <param name="args"></param>
@@ -261,7 +268,7 @@ namespace GitBifrost
 
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
                     string file_sha = git_proc.StandardOutput.ReadLine();
-                    int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
+//                    int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
 
                     if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
 
@@ -353,34 +360,6 @@ namespace GitBifrost
             return Succeeded;
         }
 
-        static string ReadToEscape(StreamReader reader)
-        {
-            var bytes = new List<byte>();
-
-            int data = reader.Read();
-
-            if (data == -1)
-            {
-                return null;
-            }
-
-            while (data != -1)
-            {
-                if (data != 0)
-                {
-                    bytes.Add((byte)data);
-
-                    data = reader.Read();
-                }
-                else
-                {
-                    break;
-                }
-            }
-
-            return Encoding.UTF7.GetString(bytes.ToArray());
-        }
-
         static int FilterSmudge(string[] args)
         {
 //            Debugger.Break();
@@ -434,7 +413,7 @@ namespace GitBifrost
 
                 if (store_interface != null)
                 {
-                    byte[] file_contents = store_interface.PullFile(store_uri.AbsolutePath, input_filename);
+                    byte[] file_contents = store_interface.PullFile(store_uri, input_filename);
 
                     if (file_contents != null)
                     {
@@ -519,8 +498,6 @@ namespace GitBifrost
 
         static int Clone(string[] args)
         {
-            Debugger.Break();
-
             string clone_args = string.Join(" ", args, 1, args.Length - 1);
 
             Git("clone", "--no-checkout", clone_args);
@@ -630,10 +607,12 @@ namespace GitBifrost
 
             try
             {
+                File.WriteAllText(".git/hooks/pre-commit", "#!/bin/bash\ngit-bifrost hook-pre-commit");
                 File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
                 File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
 
 #if __MonoCS__
+                Syscall.chmod(".git/hooks/pre-commit", FilePermissions.ACCESSPERMS);
                 Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
                 Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
 #endif // __MonoCS__
@@ -644,6 +623,34 @@ namespace GitBifrost
             }
 
             return Succeeded;
+        }
+
+        static string ReadToEscape(StreamReader reader)
+        {
+            var bytes = new List<byte>();
+
+            int data = reader.Read();
+
+            if (data == -1)
+            {
+                return null;
+            }
+
+            while (data != -1)
+            {
+                if (data != 0)
+                {
+                    bytes.Add((byte)data);
+
+                    data = reader.Read();
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return Encoding.UTF7.GetString(bytes.ToArray());
         }
 
         static void WriteToLocalStore(Stream file_stream, string filename)

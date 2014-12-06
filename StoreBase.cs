@@ -28,7 +28,7 @@ namespace GitBifrost
         /// <param name="store_location">The location of the store</param>
         /// <param name="filename">The file name to write to in the store</param>
         SyncResult PushFile(string localfilepath, Uri store_location, string filename);
-        byte[] PullFile(string url, string filename);
+        byte[] PullFile(Uri uri, string filename);
     }
 }
 

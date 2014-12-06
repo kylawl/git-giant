@@ -55,9 +55,9 @@ namespace GitBifrost
             return SyncResult.Skipped;
         }
 
-        public byte[] PullFile(string url, string filename)
+        public byte[] PullFile(Uri uri, string filename)
         {
-            string input_filepath = Path.Combine(url, filename);
+            string input_filepath = Path.Combine(uri.AbsolutePath, filename);
 
             if (File.Exists(input_filepath))
             {
