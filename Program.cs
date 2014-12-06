@@ -260,6 +260,8 @@ namespace GitBifrost
 
                 foreach (var file_rev in file_revs)
                 {
+
+                    // Read in the proxy for this revision of the file
                     string rile_rev_string = string.Format("{0}:{1}", file_rev.Item1, file_rev.Item2);
 
                     Process git_proc = StartGit("show ", rile_rev_string);
@@ -272,10 +274,21 @@ namespace GitBifrost
 
                     if (git_proc.WaitForExitCode() != 0) { return git_proc.ExitCode; }
 
+                    // Build the mangled name
+
                     string mangled_filename = string.Format("{0}-{1}.bin", file_sha, Path.GetFileName(bifrost_ver));
                     string mangled_filepath = Path.Combine(LocalStoreLocation, mangled_filename);
 
-                    SyncResult result = store_interface.PushFile(mangled_filepath, store_uri, mangled_filename);
+                    SyncResult result = SyncResult.Failed;
+
+                    if (File.Exists(mangled_filepath))
+                    {
+                        result = store_interface.PushFile(mangled_filepath, store_uri, mangled_filename);
+                    }
+                    else
+                    {
+                        LogLine("Bifrost: Failed to find revision '{0}' of '{1}' in local store", file_rev.Item1, file_rev.Item2);                       
+                    }
 
                     if (result == SyncResult.Failed)
                     {
@@ -740,9 +753,22 @@ namespace GitBifrost
         {
             string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
 
-            string command = string.Format("config --get-regexp {0} {1}", fileArg, key);
+            Process git_proc = StartGit("config --get-regexp", fileArg, key);
 
-            return Git(command).Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if(git_proc == null)
+            {
+                return new string[0];
+            }
+
+            List<string> lines = new List<string>();
+
+            string line = null;
+            while((line = git_proc.StandardOutput.ReadLine()) != null)
+            {
+                lines.Add(line);
+            }
+
+            return lines.ToArray();
         }
 
         static Process NewGit(string arguments)
