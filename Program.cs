@@ -44,48 +44,46 @@ namespace GitBifrost
         const string BinSizeThresholdKey = "repo.bin-size-threshold"; 
         const int DefaultBinSizeThreshold = 100 * Kilobytes;
 
-        static StreamWriter LogWriter = null;
-        static int GitExitCode = 0;
         static LogNoiseLevel NoiseLevel = LogNoiseLevel.Loud;
 
         static int Main(string[] args)
         {
             int result = Succeeded;
 
-//            using (LogWriter = new StreamWriter(File.Open("bifrostlog.txt", FileMode.Append, FileAccess.Write)))
+            Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
+
+            Commands["hook-sync"] = CmdHookSync;
+            Commands["hook-push"] = CmdHookPush;
+            Commands["hook-pre-commit"] = CmdHookPreCommit;
+            Commands["filter-clean"] = CmdFilterClean;
+            Commands["filter-smudge"] = CmdFilterSmudge;
+            Commands["help"] = CmdHelp;
+            Commands["clone"] = CmdClone;
+            Commands["init"] = CmdInit;
+            Commands["activate"] = CmdActivate;                
+
+
+            string arg_command = args.Length > 0 ? args[0].ToLower() : null;
+
+            if (arg_command != null)
             {
-                Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
-
-                Commands["hook-sync"] = CmdHookSync;
-                Commands["hook-push"] = CmdHookPush;
-                Commands["hook-pre-commit"] = CmdHookPreCommit;
-                Commands["filter-clean"] = CmdFilterClean;
-                Commands["filter-smudge"] = CmdFilterSmudge;
-                Commands["help"] = CmdHelp;
-                Commands["clone"] = CmdClone;
-                Commands["init"] = CmdInit;
-                Commands["activate"] = CmdActivate;                
-
-
-                string arg_command = args.Length > 0 ? args[0].ToLower() : null;
-
-                if (arg_command != null)
+                if (NoiseLevel == LogNoiseLevel.Loud)
                 {
                     LogLine("Bifrost: {0}", string.Join(" ", args));
-                    // LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
-                    // LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
+                }
+                // LogLine("Current Dir: {0}", Directory.GetCurrentDirectory());
+                // LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
 
-                    CommandDelegate command;
-                    if (!Commands.TryGetValue(arg_command, out command))
-                    {
-                        command = CmdHelp;
-                    }
-                    result = command(args);
-                }
-                else
+                CommandDelegate command;
+                if (!Commands.TryGetValue(arg_command, out command))
                 {
-                    CmdHelp(args);
+                    command = CmdHelp;
                 }
+                result = command(args);
+            }
+            else
+            {
+                result = CmdHelp(args);
             }
 
             return result;
@@ -167,7 +165,7 @@ namespace GitBifrost
                         foreach (string revision in rev_ids)
                         {
                             // Get files modified in this revision
-                            // file_status(null)file_name(null)
+                            // format: file_status<null>file_name<null>file_status<null>file_name<null>
                             Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision); 
                             if (git_proc != null)
                             {
@@ -223,7 +221,11 @@ namespace GitBifrost
 
             if (file_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
-                LogLine("Bifrost: Local store missing but should have files.");
+                LogLine("Bifrost: Local store directory is missing but should have files.");
+                foreach (var file_rev in file_revs)
+                {
+                    LogLine("    {0}:{1}", file_rev.Item1.Substring(0, 7), file_rev.Item2);
+                }
                 return Failed;
             }
 
@@ -283,7 +285,7 @@ namespace GitBifrost
                         }
 
                         string file_sha = git_proc.StandardOutput.ReadLine();
-                        int file_size = int.Parse(git_proc.StandardOutput.ReadLine());
+                        int.Parse(git_proc.StandardOutput.ReadLine()); // File size (unused here)
 
                         if (git_proc.WaitForExitFail())
                         {
@@ -661,6 +663,33 @@ namespace GitBifrost
             return succeeded ? Succeeded : Failed;
         }
 
+        static void WriteToLocalStore(Stream file_stream, string filename)
+        {
+            string filepath = Path.Combine(LocalStoreLocation, filename);
+
+            if (!File.Exists(filepath))
+            {
+                if (!Directory.Exists(LocalStoreLocation))
+                {
+                    Directory.CreateDirectory(LocalStoreLocation);
+                }
+
+                using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
+                {
+                    file_stream.CopyTo(output_stream);
+
+                    LogLine("Bifrost: Local store updated with {0}.", filepath);
+                }
+            }
+            else
+            {
+                if (NoiseLevel == LogNoiseLevel.Loud)
+                {
+                    LogLine("Bifrost: Local store skipped");
+                }
+            }
+        }
+
         static int CmdHelp(string[] args)
         {
             LogLine("usage: git-bifrost <command> [options]");
@@ -677,9 +706,9 @@ namespace GitBifrost
         {
             string clone_args = string.Join(" ", args, 1, args.Length - 1);
 
-            Git("clone", "--no-checkout", clone_args);
+            Process git_clone_proc = StartGit("clone", "--no-checkout", clone_args);
 
-            if (GitExitCode == 0)
+            if (git_clone_proc.WaitForExitSucceed())
             {
                 string arg_directory = args.Length > 2 ? args[args.Length - 1] : Path.GetFileNameWithoutExtension(args[1]);
 
@@ -687,41 +716,24 @@ namespace GitBifrost
 
                 InstallBifrost();
 
-                Git("checkout");
+
+                Process git_checkout_proc = StartGit("checkout");
+                if (git_checkout_proc.WaitForExitSucceed())
+                {
+                    return git_checkout_proc.ExitCode;
+                }
             }
 
-            return GitExitCode;
+            return Failed;
         }
 
         static int CmdInit(string[] args)
         {
-            string init_args = string.Join(" ", args);
-
-            Git(init_args);           
-
-            if (GitExitCode == 0)
-            {
-                string arg_directory = args[args.Length - 1];
-
-                if (Directory.Exists(arg_directory))
-                {
-                    Directory.SetCurrentDirectory(arg_directory);
-                }
-
-                return InstallBifrost();
-            }
-
-            return GitExitCode;
+            return InstallBifrost();
         }
 
         static int CmdActivate(string[] args)
         {
-            if (!Directory.Exists(".git"))
-            {
-                Console.WriteLine("No git repository at '{0}'", Directory.GetCurrentDirectory());
-                return Failed;
-            }
-
             InstallBifrost();
 
             // Generate sample config
@@ -779,14 +791,26 @@ namespace GitBifrost
 
         static int InstallBifrost()
         {
-            GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f");
-            if (GitExitCode != 0) { return GitExitCode; }
+            if (!Directory.Exists(".git"))
+            {
+                Console.WriteLine("No git repository at '{0}'", Directory.GetCurrentDirectory());
+                return Failed;
+            }
+                
+            if (!GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f"))
+            { 
+                return Failed; 
+            }
 
-            GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f");
-            if (GitExitCode != 0) { return GitExitCode; }
+            if (!GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f"))
+            { 
+                return Failed; 
+            }
 
-            GitConfigSet("filter.bifrost.required", "true");
-            if (GitExitCode != 0) { return GitExitCode; }
+            if (!GitConfigSet("filter.bifrost.required", "true"))
+            { 
+                return Failed; 
+            }
 
             try
             {
@@ -806,6 +830,116 @@ namespace GitBifrost
             }
 
             return Succeeded;
+        }
+
+        public static void LogLine(string format, params object[] arg)
+        {
+            try
+            {
+//                LogWriter.WriteLine(format, arg);
+                Console.Error.WriteLine(format, arg);
+            }
+            catch
+            {
+
+            }
+        }
+
+        static Dictionary<string, IStoreInterface> GetStoreInterfaces()
+        {
+            var store_interfaces = new Dictionary<string, IStoreInterface>();
+
+            store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
+
+            return store_interfaces;
+        }
+
+        static StoreContainer GetStores()
+        {
+            StoreContainer stores = new StoreContainer();
+
+            string[] data_stores_text = GitConfigGetRegex(@"^store\..*", ".gitbifrost");
+
+            foreach (string store_text in data_stores_text)
+            {
+                string[] store_kv = store_text.Split(new char[]{ ' ' }, 2);
+
+                string store_name = Path.GetFileNameWithoutExtension(store_kv[0]);
+                string key = Path.GetExtension(store_kv[0]).Substring(1);
+
+                StoreData store_data = null;
+
+                if (!stores.TryGetValue(store_name, out store_data))
+                {
+                    store_data = new StoreData();
+                    stores[store_name] = store_data;
+                }
+
+                store_data[key] = store_kv[1];
+            }
+
+            return stores;
+        }
+            
+        // Returns true if set succeeded
+        static bool GitConfigSet(string key, string value, string file = null)
+        {       
+            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
+
+            string command = string.Format("config {0} {1} \"{2}\"", fileArg, key, value);
+            
+            return StartGit(command).WaitForExitSucceed();
+        }
+
+        static string[] GitConfigGetRegex(string key, string file)
+        {
+            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
+
+            Process git_proc = StartGit("config --get-regexp", fileArg, key);
+
+            if(git_proc == null)
+            {
+                return new string[0];
+            }
+
+            List<string> lines = new List<string>();
+
+            string line = git_proc.StandardOutput.ReadLine();
+            while(line != null)
+            {
+                lines.Add(line);
+
+                line = git_proc.StandardOutput.ReadLine();
+            }
+
+            return lines.ToArray();
+        }
+
+        static int GitConfigGetInt(string key, int defaultValue, string file)
+        {
+            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
+
+            Process git_proc = StartGit("config --null --get", fileArg, key);
+
+            if (git_proc == null)
+            {
+                return defaultValue;
+            }
+
+            string value_str = ReadToNull(git_proc.StandardOutput);
+
+            if (git_proc.WaitForExitCode() != 0)
+            {
+                return defaultValue;
+            }
+
+            int value;
+            if (int.TryParse(value_str, out value))
+            {
+                return value;
+            }
+
+            return defaultValue;
         }
 
         static string GetFilterAttribute(string file)
@@ -864,179 +998,23 @@ namespace GitBifrost
             return Encoding.UTF7.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
         }
 
-        static void WriteToLocalStore(Stream file_stream, string filename)
-        {
-            string filepath = Path.Combine(LocalStoreLocation, filename);
-
-            if (!File.Exists(filepath))
-            {
-                if (!Directory.Exists(LocalStoreLocation))
-                {
-                    Directory.CreateDirectory(LocalStoreLocation);
-                }
-
-                using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
-                {
-                    file_stream.CopyTo(output_stream);
-
-                    LogLine("Bifrost: Local store updated {0}", filepath);
-                }
-            }
-            else
-            {
-                LogLine("Bifrost: Local store skipped");
-            }
-        }
-
-
-        public static void LogLine(string format, params object[] arg)
-        {
-            try
-            {
-//                LogWriter.WriteLine(format, arg);
-                Console.Error.WriteLine(format, arg);
-            }
-            catch
-            {
-
-            }
-        }
-
-        static Dictionary<string, IStoreInterface> GetStoreInterfaces()
-        {
-            var store_interfaces = new Dictionary<string, IStoreInterface>();
-
-            store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
-
-            return store_interfaces;
-        }
-
-        static StoreContainer GetStores()
-        {
-            StoreContainer stores = new StoreContainer();
-
-            string[] data_stores_text = GitConfigGetRegex(@"^store\..*", ".gitbifrost");
-
-            foreach (string store_text in data_stores_text)
-            {
-                string[] store_kv = store_text.Split(new char[]{ ' ' }, 2);
-
-                string store_name = Path.GetFileNameWithoutExtension(store_kv[0]);
-                string key = Path.GetExtension(store_kv[0]).Substring(1);
-
-                StoreData store_data = null;
-
-                if (!stores.TryGetValue(store_name, out store_data))
-                {
-                    store_data = new StoreData();
-                    stores[store_name] = store_data;
-                }
-
-                store_data[key] = store_kv[1];
-            }
-
-            return stores;
-        }
-
-        static void GitConfigSet(string key, string value, string file = null)
-        {       
-            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
-
-            string command = string.Format("config {0} {1} \"{2}\"", fileArg, key, value);
-            
-            Git(command);
-        }
-
-        static string[] GitConfigGetRegex(string key, string file)
-        {
-            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
-
-            Process git_proc = StartGit("config --get-regexp", fileArg, key);
-
-            if(git_proc == null)
-            {
-                return new string[0];
-            }
-
-            List<string> lines = new List<string>();
-
-            string line = null;
-            while((line = git_proc.StandardOutput.ReadLine()) != null)
-            {
-                lines.Add(line);
-            }
-
-            return lines.ToArray();
-        }
-
-        static int GitConfigGetInt(string key, int defaultValue, string file)
-        {
-            string fileArg = string.IsNullOrWhiteSpace(file) ? "" : "-f " + file;
-
-            Process git_proc = StartGit("config --null --get", fileArg, key);
-
-            if (git_proc == null)
-            {
-                return defaultValue;
-            }
-
-            string value_str = ReadToNull(git_proc.StandardOutput);
-
-            if (git_proc.WaitForExitCode() != 0)
-            {
-                return defaultValue;
-            }
-
-            int value;
-            if (int.TryParse(value_str, out value))
-            {
-                return value;
-            }
-
-            return defaultValue;
-        }
-
-        static Process NewGit(string arguments)
+        static Process StartGit(params string[] arguments)
         {
             Process process = new Process();
             ProcessStartInfo psi = process.StartInfo;
             psi.FileName = "git";
-            psi.Arguments = arguments;
+            psi.Arguments = string.Join(" ", arguments);
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
             psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\"); // Somehow windows needs this?
-            
-            return process;
-        }
-
-        static Process StartGit(params string[] arguments)
-        {
-            Process process = NewGit(string.Join(" ", arguments));
 
             if (process.Start())
             {
                 return process;
             }
 
-            LogLine("Failed to start git");
+            LogLine("Failed to start git.");
             return null;
-        }
-
-
-        static string Git(params string[] arguments)
-        {
-            Process process = NewGit(string.Join(" ", arguments));
-            
-            string output = string.Empty;
-            if (process.Start())
-            {
-                output = process.StandardOutput.ReadToEnd();
-                process.WaitForExit();
-            }
-
-            GitExitCode = process.ExitCode;
-
-            return output;
         }
     }
 
@@ -1051,6 +1029,11 @@ namespace GitBifrost
         public static bool WaitForExitFail(this Process self)
         {
             return WaitForExitCode(self) != 0;
+        }
+
+        public static bool WaitForExitSucceed(this Process self)
+        {
+            return WaitForExitCode(self) == 0;
         }
     }
     
