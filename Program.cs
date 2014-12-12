@@ -726,24 +726,27 @@ namespace GitBifrost
 
             // Generate sample config
 
-            GitConfigSet(TextSizeThresholdKey, DefaultTextSizeThreshold.ToString(), ".gitbifrost");
-            GitConfigSet(BinSizeThresholdKey, DefaultBinSizeThreshold.ToString(), ".gitbifrost");
+            if (args.Contains("--test-config", StringComparer.CurrentCultureIgnoreCase))
+            {
+                GitConfigSet(TextSizeThresholdKey, DefaultTextSizeThreshold.ToString(), ".gitbifrost");
+                GitConfigSet(BinSizeThresholdKey, DefaultBinSizeThreshold.ToString(), ".gitbifrost");
 
-            GitConfigSet("localstore.depth", "0", ".gitbifrost");
+                GitConfigSet("localstore.depth", "0", ".gitbifrost");
 
-            GitConfigSet("store.luminawesome.mac.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
-            GitConfigSet("store.luminawesome.mac.url", "/Users/kylerocha/dev/BifrostTestCDN", ".gitbifrost");    
+                GitConfigSet("store.luminawesome.mac.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
+                GitConfigSet("store.luminawesome.mac.url", "/Users/kylerocha/dev/BifrostTestCDN", ".gitbifrost");    
 
-            GitConfigSet("store.luminawesome.mac-backup.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
-            GitConfigSet("store.luminawesome.mac-backup.url", "/Users/kylerocha/dev/BifrostTestCDN2", ".gitbifrost");    
+                GitConfigSet("store.luminawesome.mac-backup.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
+                GitConfigSet("store.luminawesome.mac-backup.url", "/Users/kylerocha/dev/BifrostTestCDN2", ".gitbifrost");    
 
-            GitConfigSet("store.luminawesome.onsite.remote", "file:///D:/Work/BifrostTest.git", ".gitbifrost");
-            GitConfigSet("store.luminawesome.onsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");           
+                GitConfigSet("store.luminawesome.onsite.remote", "file:///D:/Work/BifrostTest.git", ".gitbifrost");
+                GitConfigSet("store.luminawesome.onsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");           
 
-            GitConfigSet("store.luminawesome.offsite.remote", "https://github.com/kylawl/BifrostTest.git", ".gitbifrost");
-            GitConfigSet("store.luminawesome.offsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");
-            GitConfigSet("store.luminawesome.offsite.user", "kyle", ".gitbifrost");
-            GitConfigSet("store.luminawesome.offsite.password", "some_password", ".gitbifrost");
+                GitConfigSet("store.luminawesome.offsite.remote", "https://github.com/kylawl/BifrostTest.git", ".gitbifrost");
+                GitConfigSet("store.luminawesome.offsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");
+                GitConfigSet("store.luminawesome.offsite.user", "kyle", ".gitbifrost");
+                GitConfigSet("store.luminawesome.offsite.password", "some_password", ".gitbifrost");
+            }
 
             if (args.Contains("-ica", StringComparer.CurrentCultureIgnoreCase) ||
                 args.Contains("--include-common-attributes", StringComparer.CurrentCultureIgnoreCase))
@@ -789,12 +792,12 @@ namespace GitBifrost
             {
                 File.WriteAllText(".git/hooks/pre-commit", "#!/bin/bash\ngit-bifrost hook-pre-commit");
                 File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
-                File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
+                //File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
 
 #if __MonoCS__
                 Syscall.chmod(".git/hooks/pre-commit", FilePermissions.ACCESSPERMS);
                 Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
-                Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
+                //Syscall.chmod(".git/hooks/post-checkout", FilePermissions.ACCESSPERMS);
 #endif // __MonoCS__
             }
             catch
