@@ -242,13 +242,20 @@ namespace GitBifrost
             LogLine("Bifrost: Updating datastore(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_uri.AbsoluteUri);
 
             var store_interfaces = GetStoreInterfaces();
-            StoreContainer store_infos = GetStores();
+            var store_infos = GetStores();
 
-            foreach (KeyValuePair<string, StoreData> store_kvp in store_infos)
+            int primaries_updated = 0;
+
+            foreach (var store_data in store_infos)
             {
-                StoreData store_data = store_kvp.Value;
+                Uri store_remote_uri;
+                string store_uri_string;
+                if (!(store_data.TryGetValue("remote", out store_uri_string) && 
+                    Uri.TryCreate(store_uri_string, UriKind.Absolute, out store_remote_uri)))
+                {
+                    continue;
+                }
 
-                Uri store_remote_uri = new Uri(store_data["remote"]);
                 Uri store_uri = new Uri(store_data["url"]);
 
                 if (store_remote_uri != arg_remote_uri)
@@ -257,7 +264,7 @@ namespace GitBifrost
                 }
 
                 IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
-                if (store_interface == null || !store_interface.IsStoreAvailable(store_uri))
+                if (store_interface == null || !store_interface.OpenStore(store_uri, store_data))
                 {
                     continue;
                 }
@@ -280,6 +287,7 @@ namespace GitBifrost
 
                         if (!bifrost_ver.StartsWith(BifrostProxyId))
                         {
+                            store_interface.CloseStore();
                             LogLine("Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev.Item2);
                             return Failed;
                         }
@@ -289,6 +297,7 @@ namespace GitBifrost
 
                         if (git_proc.WaitForExitFail())
                         {
+                            store_interface.CloseStore();
                             return git_proc.ExitCode;
                         }
 
@@ -309,7 +318,8 @@ namespace GitBifrost
 
                         if (result == SyncResult.Failed)
                         {
-                            LogLine("Bifrost: Failed to push file {0} to {1}.", filepath, store_remote_uri.AbsolutePath);
+                            store_interface.CloseStore();
+                            LogLine("Bifrost: Failed to push file {0} to {1}.", filepath, store_uri.LocalPath);
                             return Failed;
                         }
                         else if (result == SyncResult.Success)
@@ -327,8 +337,16 @@ namespace GitBifrost
                     }
                     else 
                     { 
+                        store_interface.CloseStore();
                         return Failed; 
                     }
+                }
+
+                store_interface.CloseStore();
+
+                if (IsPrimaryStore(store_data))
+                {
+                    ++primaries_updated;
                 }
 
                 if (NoiseLevel == LogNoiseLevel.Normal)
@@ -341,8 +359,25 @@ namespace GitBifrost
                 }
             }
 
+            if (primaries_updated <= 0)
+            {
+                LogLine("Bifrost: Failed to update a primary store for this remote.");
+                return Failed;
+            }
+
             
             return Succeeded;
+        }
+
+        static bool IsPrimaryStore(Dictionary<string, string> store_data)
+        {
+            string value;
+            if (store_data.TryGetValue("primary", out value))
+            {
+                return bool.Parse(value);
+            }
+
+            return false;
         }
 
         // Verify that the staged files are reasonable to fit in a git repo filtered by bifrost
@@ -551,109 +586,99 @@ namespace GitBifrost
 
             string input_filename = GetFilePath(expected_file_hash);
 
-            //
-            // Collect up all the store locations in the config file
-            //
-
-			string[] loaded_stores = GitConfigGetRegex(@".*\.url$", ".gitbifrost");
-
-            Uri[] data_stores = new Uri[loaded_stores.Length + 1];
-
-            // Include the local store first
-            data_stores[0] = new Uri(Path.Combine(Directory.GetCurrentDirectory(), LocalStoreLocation)); 
-
-            // Load the other stores
-            {
-                int index = 1;
-                foreach (string store_url in loaded_stores)
-                {
-                    string[] store_tokens = store_url.Split(new char[] { ' ' }, 2);
-
-                    Uri new_uri;
-                    if (Uri.TryCreate(store_tokens[1], UriKind.Absolute, out new_uri))
-                    {
-                        data_stores[index++] =  new_uri;
-                    }
-                }
-            }
-
 
             bool succeeded = false;
 
             var store_interfaces = GetStoreInterfaces();
 
             // Walk through all the stores/interfaces and attempt to retrevie a matching file from any of them
-            foreach (Uri store_uri in data_stores)
+            foreach (var store in GetStores())
             {
+                // It's perfectly normal for some urls to be invalid uris becasue 
+                // different plaforms have different rules for file system uris
+                Uri store_uri;
+                if (!Uri.TryCreate(store["url"], UriKind.Absolute, out store_uri))
+                {
+                    continue;
+                }
+
                 IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
 
                 if (store_interface != null)
                 {
-                    byte[] file_contents = store_interface.PullFile(store_uri, input_filename);
-
-                    if (file_contents != null)
+                    if (store_interface.OpenStore(store_uri, store))
                     {
-                        int loaded_file_size = file_contents.Length;
+                        byte[] file_contents = store_interface.PullFile(store_uri, input_filename);
 
-                        byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
-                        string loaded_file_hash = BitConverter.ToString(loaded_file_hash_bytes).Replace("-", "");
+                        store_interface.CloseStore();
 
-                        if (NoiseLevel == LogNoiseLevel.Loud)
+                        if (file_contents != null)
                         {
-                            LogLine("    Repo File: {0}", arg_filepath);
-                            LogLine("   Store Name: {0}", input_filename);
-                            LogLine("  Expect Hash: {0}", expected_file_hash);
-                            LogLine("  Loaded Hash: {0}", loaded_file_hash);
-                            LogLine("Expected Size: {0}", expected_file_size);
-                            LogLine("  Loaded Size: {0}", loaded_file_size);
+                            int loaded_file_size = file_contents.Length;
+
+                            byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
+                            string loaded_file_hash = BitConverter.ToString(loaded_file_hash_bytes).Replace("-", "");
+
+                            if (NoiseLevel == LogNoiseLevel.Loud)
+                            {
+                                LogLine("    Repo File: {0}", arg_filepath);
+                                LogLine("   Store Name: {0}", input_filename);
+                                LogLine("  Expect Hash: {0}", expected_file_hash);
+                                LogLine("  Loaded Hash: {0}", loaded_file_hash);
+                                LogLine("Expected Size: {0}", expected_file_size);
+                                LogLine("  Loaded Size: {0}", loaded_file_size);
+                            }
+
+                            //
+                            // Safety checking size and hash
+                            //
+
+                            if (expected_file_size != loaded_file_size)
+                            {
+                                LogLine("!!!ERROR!!!");
+                                LogLine("File size missmatch with '{0}'", arg_filepath);
+                                LogLine("Store '{0}'", store_uri.AbsoluteUri);
+                                LogLine("Expected {0}, got {1}", expected_file_size, loaded_file_size);
+                                LogLine("Will try another store, but this one should be tested for integrity");
+                                continue;
+                            }
+
+                            if (loaded_file_hash != expected_file_hash)
+                            {
+                                LogLine("!!!ERROR!!!");
+                                LogLine("File hash missmatch with '{0}'", arg_filepath);
+                                LogLine("Store '{0}'", store_uri.AbsoluteUri);
+                                LogLine("Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
+                                LogLine("Will try another store, but this one should be tested for integrity");
+                                continue;
+                            }
+
+                            //
+                            // Finally write file
+                            //
+
+                            // Put a copy in the local store
+                            WriteToLocalStore(new MemoryStream(file_contents), input_filename);
+
+                            // Give it to git to update the working directory
+                            using (Stream stdout = Console.OpenStandardOutput())
+                            {
+                                stdout.Write(file_contents, 0, loaded_file_size);
+                            }
+
+                            succeeded = true;
+
+                            break;
                         }
-
-                        //
-                        // Safety checking size and hash
-                        //
-
-                        if (expected_file_size != loaded_file_size)
+                        else
                         {
-                            LogLine("!!!ERROR!!!");
-                            LogLine("File size missmatch with '{0}'", arg_filepath);
-                            LogLine("Store '{0}'", store_uri.AbsoluteUri);
-                            LogLine("Expected {0}, got {1}", expected_file_size, loaded_file_size);
-                            LogLine("Will try another store, but this one should be tested for integrity");
-                            continue;
+                            if (NoiseLevel == LogNoiseLevel.Loud)
+                            {
+                                LogLine("Bifrost: Store {0} does not contain file.", store_uri.AbsoluteUri);
+                                LogLine("    Repo File: {0}", arg_filepath);
+                                LogLine("   Store Name: {0}", input_filename);
+                            }
                         }
-
-                        if (loaded_file_hash != expected_file_hash)
-                        {
-                            LogLine("!!!ERROR!!!");
-                            LogLine("File hash missmatch with '{0}'", arg_filepath);
-                            LogLine("Store '{0}'", store_uri.AbsoluteUri);
-                            LogLine("Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
-                            LogLine("Will try another store, but this one should be tested for integrity");
-                            continue;
-                        }
-
-                        //
-                        // Finally write file
-                        //
-
-                        // Put a copy in the local store
-                        WriteToLocalStore(new MemoryStream(file_contents), input_filename);
-
-                        // Give it to git to update the working directory
-                        using (Stream stdout = Console.OpenStandardOutput())
-                        {
-                            stdout.Write(file_contents, 0, loaded_file_size);
-                        }
-
-                        succeeded = true;
-
-                        break;
-                    }
-                    else
-                    {
-                        LogLine("Bifrost: Store {0} does not contain file.", store_uri.AbsoluteUri);
-                        LogLine("    Repo File: {0}", arg_filepath);
-                        LogLine("   Store Name: {0}", input_filename);
                     }
                 }
                 else
@@ -686,8 +711,10 @@ namespace GitBifrost
                 using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
                 {
                     file_stream.CopyTo(output_stream);
-
-                    LogLine("Bifrost: Local store updated with {0}.", filepath);
+                    if (NoiseLevel == LogNoiseLevel.Loud)
+                    {
+                        LogLine("Bifrost: Local store updated with '{0}'.", filepath);
+                    }
                 }
             }
             else
@@ -752,21 +779,16 @@ namespace GitBifrost
                 GitConfigSet(TextSizeThresholdKey, DefaultTextSizeThreshold.ToString(), ".gitbifrost");
                 GitConfigSet(BinSizeThresholdKey, DefaultBinSizeThreshold.ToString(), ".gitbifrost");
 
-                GitConfigSet("localstore.depth", "0", ".gitbifrost");
+//                GitConfigSet("localstore.depth", "0", ".gitbifrost");
 
                 GitConfigSet("store.luminawesome.mac.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac.url", "/Users/kylerocha/dev/BifrostTestCDN", ".gitbifrost");    
+                GitConfigSet("store.luminawesome.mac.url", "ftp://localhost/dev/BifrostTestCDN", ".gitbifrost");
+                GitConfigSet("store.luminawesome.mac.primary", "true", ".gitbifrost");
+                GitConfigSet("store.luminawesome.mac.username", "USERNAME", ".gitbifrost");
+                GitConfigSet("store.luminawesome.mac.password", "PASSWORD", ".gitbifrost");
 
                 GitConfigSet("store.luminawesome.mac-backup.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
                 GitConfigSet("store.luminawesome.mac-backup.url", "/Users/kylerocha/dev/BifrostTestCDN2", ".gitbifrost");    
-
-                GitConfigSet("store.luminawesome.onsite.remote", "file:///D:/Work/BifrostTest.git", ".gitbifrost");
-                GitConfigSet("store.luminawesome.onsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");           
-
-                GitConfigSet("store.luminawesome.offsite.remote", "https://github.com/kylawl/BifrostTest.git", ".gitbifrost");
-                GitConfigSet("store.luminawesome.offsite.url", "file:///D:/Work/BifrostTestCDN", ".gitbifrost");
-                GitConfigSet("store.luminawesome.offsite.user", "kyle", ".gitbifrost");
-                GitConfigSet("store.luminawesome.offsite.password", "some_password", ".gitbifrost");
             }
 
             if (args.Contains("-ica", StringComparer.CurrentCultureIgnoreCase) ||
@@ -793,8 +815,6 @@ namespace GitBifrost
                 });
             }
 
-            Console.WriteLine("Bifrost is now active");
-
             return Succeeded;
         }
 
@@ -802,7 +822,7 @@ namespace GitBifrost
         {
             if (!Directory.Exists(".git"))
             {
-                Console.WriteLine("No git repository at '{0}'", Directory.GetCurrentDirectory());
+                Console.WriteLine("No git repository at '{0}'. Init a repo before using bifrost.", Directory.GetCurrentDirectory());
                 return Failed;
             }
                 
@@ -838,6 +858,8 @@ namespace GitBifrost
                 return Failed;
             }
 
+            Console.WriteLine("Bifrost successfully installed into repo.");
+
             return Succeeded;
         }
 
@@ -866,14 +888,25 @@ namespace GitBifrost
             var store_interfaces = new Dictionary<string, IStoreInterface>();
 
             store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
+            store_interfaces[Uri.UriSchemeFtp] = new StoreFtp();
+            store_interfaces["ftps"] = new StoreFtp();
 
             return store_interfaces;
         }
 
-        static StoreContainer GetStores()
+        static List<Dictionary<string, string>> GetStores()
         {
-            StoreContainer stores = new StoreContainer();
+            var stores = new List<Dictionary<string, string>>(7); // Arbitrary prime number
 
+            // Add internal tore
+            {
+                var local = new Dictionary<string, string>();
+                local["name"] = "store.BIFROST.INTERNAL"; // Unique, reserved name
+                local["url"] = Path.Combine(Directory.GetCurrentDirectory(), LocalStoreLocation);
+
+                stores.Add(local);
+            }
+   
             string[] data_stores_text = GitConfigGetRegex(@"^store\..*", ".gitbifrost");
 
             foreach (string store_text in data_stores_text)
@@ -883,12 +916,17 @@ namespace GitBifrost
                 string store_name = Path.GetFileNameWithoutExtension(store_kv[0]);
                 string key = Path.GetExtension(store_kv[0]).Substring(1);
 
-                StoreData store_data = null;
+                var store_data = stores.Find((Dictionary<string, string> match) =>
+                        {
+                            return match["name"] == store_name;
+                        });
 
-                if (!stores.TryGetValue(store_name, out store_data))
+                if (store_data == null)
                 {
-                    store_data = new StoreData();
-                    stores[store_name] = store_data;
+                    store_data = new Dictionary<string, string>();
+                    store_data["name"] = store_name;
+
+                    stores.Add(store_data);
                 }
 
                 store_data[key] = store_kv[1];
@@ -1050,6 +1088,20 @@ namespace GitBifrost
         public static bool WaitForExitSucceed(this Process self)
         {
             return WaitForExitCode(self) == 0;
+        }
+    }
+
+    static class DictionaryEx
+    {
+        public static string GetValue(this Dictionary<string, string> self, string key, string default_value)
+        {
+            string value;
+            if (self.TryGetValue(key, out value))
+            {
+                return value;
+            }
+
+            return default_value;
         }
     }
     

@@ -2,34 +2,40 @@
 
 using System;
 using System.IO;
+using System.Collections.Generic;
 
 namespace GitBifrost
 {
     class StoreFileSystem : IStoreInterface
     {
-        public bool IsStoreAvailable(Uri store_location)
+        public bool OpenStore(Uri uri, Dictionary<string, string> store)
         {
-            return store_location.Scheme == Uri.UriSchemeFile && Directory.Exists(store_location.LocalPath);
+            return uri.Scheme == Uri.UriSchemeFile && Directory.Exists(uri.LocalPath);
         }
 
-        public bool FileExists(string url, string filename)
+        public void CloseStore()
         {
-            string filepath = Path.Combine(url, filename);
-            return File.Exists(filepath);
+            /* do nothing */
         }
 
         public SyncResult PushFile(string source_file, Uri store_location, string filename)
         {
             string store_filepath = Path.Combine(store_location.LocalPath, filename);
+            string dir = Path.GetDirectoryName(store_filepath);
 
             try
             {
                 if (!File.Exists(store_filepath))
                 {
+                    if (!Directory.Exists(dir))
+                    {
+                        Directory.CreateDirectory(dir);
+                    }
+
                     Guid guid = Guid.NewGuid();
 
                     string store_filename_temp = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
-                    string store_filepath_temp = Path.Combine(store_location.LocalPath, store_filename_temp);
+                    string store_filepath_temp = Path.Combine(dir, store_filename_temp);
 
                     File.Copy(source_file, store_filepath_temp);
 
@@ -40,7 +46,7 @@ namespace GitBifrost
                     }
                     else
                     {
-                        File.Delete(store_filepath);
+                        File.Delete(store_filepath_temp);
                         return SyncResult.SkippedLate;
                     }
                 }

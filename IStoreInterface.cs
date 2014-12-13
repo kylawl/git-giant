@@ -1,6 +1,7 @@
 ﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
 
 using System;
+using System.Collections.Generic;
 
 namespace GitBifrost
 {
@@ -17,8 +18,8 @@ namespace GitBifrost
 
     interface IStoreInterface
     {
-        bool IsStoreAvailable(Uri store_location);
-        bool FileExists(string url, string filename);
+        bool OpenStore(Uri uri, Dictionary<string, string> store);
+        void CloseStore();
 
         /// <summary>
         /// Pushs the file to a datastore
