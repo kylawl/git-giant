@@ -18,7 +18,7 @@ namespace GitBifrost
             return File.Exists(filepath);
         }
 
-        public SyncResult PushFile(string localfilepath, Uri store_location, string filename)
+        public SyncResult PushFile(string source_file, Uri store_location, string filename)
         {
             string store_filepath = Path.Combine(store_location.LocalPath, filename);
 
@@ -31,7 +31,7 @@ namespace GitBifrost
                     string store_filename_temp = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
                     string store_filepath_temp = Path.Combine(store_location.LocalPath, store_filename_temp);
 
-                    File.Copy(localfilepath, store_filepath_temp);
+                    File.Copy(source_file, store_filepath_temp);
 
                     if (!File.Exists(store_filepath))
                     {
@@ -57,7 +57,7 @@ namespace GitBifrost
 
         public byte[] PullFile(Uri uri, string filename)
         {
-            string input_filepath = Path.Combine(uri.AbsolutePath, filename);
+            string input_filepath = Path.Combine(uri.LocalPath, filename);
 
             if (File.Exists(input_filepath))
             {

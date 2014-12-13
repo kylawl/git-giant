@@ -44,7 +44,7 @@ namespace GitBifrost
         const string BinSizeThresholdKey = "repo.bin-size-threshold"; 
         const int DefaultBinSizeThreshold = 100 * Kilobytes;
 
-        static LogNoiseLevel NoiseLevel = LogNoiseLevel.Loud;
+        static LogNoiseLevel NoiseLevel = LogNoiseLevel.Normal;
 
         static int Main(string[] args)
         {
@@ -293,14 +293,14 @@ namespace GitBifrost
                         }
 
                         // Build the mangled name
-                        string mangled_filename = string.Format("{0}.bin", file_sha);
-                        string mangled_filepath = Path.Combine(LocalStoreLocation, mangled_filename);
+                        string filename = GetFilePath(file_sha);
+                        string filepath = Path.Combine(LocalStoreLocation, filename);
 
                         SyncResult result = SyncResult.Failed;
 
-                        if (File.Exists(mangled_filepath))
+                        if (File.Exists(filepath))
                         {
-                            result = store_interface.PushFile(mangled_filepath, store_uri, mangled_filename);
+                            result = store_interface.PushFile(filepath, store_uri, filename);
                         }
                         else
                         {
@@ -309,7 +309,7 @@ namespace GitBifrost
 
                         if (result == SyncResult.Failed)
                         {
-                            LogLine("Bifrost: Failed to push file {0} to {1}.", mangled_filepath, store_remote_uri.AbsolutePath);
+                            LogLine("Bifrost: Failed to push file {0} to {1}.", filepath, store_remote_uri.AbsolutePath);
                             return Failed;
                         }
                         else if (result == SyncResult.Success)
@@ -505,7 +505,9 @@ namespace GitBifrost
             }
 
             // Dump the real file into the local store
-            string output_filename = String.Format("{0}.bin", file_hash);
+            string output_filename = GetFilePath(file_hash);
+
+
             WriteToLocalStore(file_stream, output_filename);
 
             return Succeeded;
@@ -547,7 +549,7 @@ namespace GitBifrost
                 expected_file_size = int.Parse(input_reader.ReadLine());
             }
 
-            string input_filename = String.Format("{0}.bin", expected_file_hash);
+            string input_filename = GetFilePath(expected_file_hash);
 
             //
             // Collect up all the store locations in the config file
@@ -566,7 +568,12 @@ namespace GitBifrost
                 foreach (string store_url in loaded_stores)
                 {
                     string[] store_tokens = store_url.Split(new char[] { ' ' }, 2);
-                    data_stores[index++] = new Uri(store_tokens[1]);
+
+                    Uri new_uri;
+                    if (Uri.TryCreate(store_tokens[1], UriKind.Absolute, out new_uri))
+                    {
+                        data_stores[index++] =  new_uri;
+                    }
                 }
             }
 
@@ -667,11 +674,13 @@ namespace GitBifrost
         {
             string filepath = Path.Combine(LocalStoreLocation, filename);
 
+            string filedir = Path.GetDirectoryName(filepath);
+
             if (!File.Exists(filepath))
             {
-                if (!Directory.Exists(LocalStoreLocation))
+                if (!Directory.Exists(filedir))
                 {
-                    Directory.CreateDirectory(LocalStoreLocation);
+                    Directory.CreateDirectory(filedir);
                 }
 
                 using (FileStream output_stream = new FileStream(filepath, FileMode.Create, FileAccess.Write))
@@ -685,7 +694,7 @@ namespace GitBifrost
             {
                 if (NoiseLevel == LogNoiseLevel.Loud)
                 {
-                    LogLine("Bifrost: Local store skipped");
+                    LogLine("Bifrost: Local store update skipped");
                 }
             }
         }
@@ -843,6 +852,13 @@ namespace GitBifrost
             {
 
             }
+        }
+
+
+        static string GetFilePath(string file_hash)
+        {
+            // Use the first 3 hex characters as the directory names which is 4096 directories
+            return String.Format("{0}/{1}/{2}/{3}.bin", file_hash[0], file_hash[1], file_hash[2], file_hash);
         }
 
         static Dictionary<string, IStoreInterface> GetStoreInterfaces()
