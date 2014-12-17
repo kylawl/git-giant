@@ -10,7 +10,14 @@ namespace GitBifrost
     {
         public bool OpenStore(Uri uri, Dictionary<string, string> store)
         {
-            return uri.Scheme == Uri.UriSchemeFile && Directory.Exists(uri.LocalPath);
+            bool directory_exists = Directory.Exists(uri.LocalPath);
+
+            if (!directory_exists)
+            {
+                Program.LogLine(LogNoiseLevel.Loud, "Bifrost: Unable to find store '{0}'", uri.LocalPath);
+            }
+
+            return directory_exists && uri.Scheme == Uri.UriSchemeFile;
         }
 
         public void CloseStore()

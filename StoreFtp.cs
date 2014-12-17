@@ -17,7 +17,7 @@ namespace GitBifrost
         {
             if (Client != null)
             {
-                Program.LogLine("Store is already open, did you forget to close the other one first?");
+                Program.LogLine(LogNoiseLevel.Normal, "Store is already open, did you forget to close the other one first?");
                 return false;
             }
 
@@ -33,7 +33,14 @@ namespace GitBifrost
                 ftp_client.Credentials = credentials;
                 ftp_client.Host = uri.Host;
 
-                ftp_client.Connect();
+                try
+                {
+                    ftp_client.Connect();
+                }
+                catch
+                {
+                    // It's ok to do nothing here
+                }
 
                 if (ftp_client.IsConnected && ftp_client.DirectoryExists(uri.AbsolutePath))
                 {
@@ -43,7 +50,7 @@ namespace GitBifrost
                 }
                 else
                 {
-                    Program.LogLine("Can't connect to {0}", uri.LocalPath);
+                    Program.LogLine(LogNoiseLevel.Loud, "Can't connect to {0}", uri.AbsoluteUri);
                 }
             }
 
@@ -72,7 +79,7 @@ namespace GitBifrost
                         }
                         catch
                         {
-                            Program.LogLine("Bifrost: Unable to created directory '{0}' in '{1}'. Do you have the correct permissions?", 
+                            Program.LogLine(LogNoiseLevel.Normal, "Bifrost: Unable to created directory '{0}' in '{1}'. Do you have the correct permissions?", 
                                 dir, Client.GetWorkingDirectory());
 
                             return SyncResult.Failed;
