@@ -127,6 +127,7 @@ namespace GitBifrost
 
                     string[] push_tokens = push_info.Split(' ');
 
+
                     //string local_ref = push_tokens[0];
                     string local_sha = push_tokens[1];
                     //string remote_ref = push_tokens[2];
@@ -155,7 +156,7 @@ namespace GitBifrost
                             }
                         }
 
-
+                            
                         foreach (string revision in rev_ids)
                         {
                             // Get files modified in this revision
@@ -175,6 +176,7 @@ namespace GitBifrost
 
                             for (int i = 0; i < revision_files.Length; i += 2)
                             {
+                                LogLine(LogNoiseLevel.Debug, "Made it here");
                                 string status = revision_files[i];
                                 string file = revision_files[i + 1];
 
@@ -189,9 +191,7 @@ namespace GitBifrost
                                 {
                                     try
                                     {
-                                        string filter_tag = GetFilterAttribute(file);
-
-                                        if (filter_tag == "bifrost")
+                                        if (GetFilterAttribute(file) == "bifrost")
                                         {
                                             file_revs.Add(new Tuple<string, string>(revision, file));
                                         }
@@ -211,7 +211,7 @@ namespace GitBifrost
                         // Commit deleted?
                     }
                 }
-            }            
+            }
 
             if (file_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
@@ -411,13 +411,6 @@ namespace GitBifrost
                             LogLine(LogNoiseLevel.Loud, "Bifrost: Needs restaging '{0}'.", file);
                             succeeded = false;
                             files_need_restaging = true;
-
-                            if (git_proc.WaitForExitFail())
-                            {
-                                return git_proc.ExitCode;
-                            }
-
-                            break;
                         }
 
                         LogLine(LogNoiseLevel.Debug, "Bifrost: Filtered '{0}'.", file);
@@ -478,7 +471,6 @@ namespace GitBifrost
                             files_over_limit = true;
                         }
                     }
-                    
                 }
             }
 
@@ -998,7 +990,7 @@ namespace GitBifrost
 
         static string GetFilterAttribute(string file)
         {
-            Process git_check_attr = StartGit(string.Format("check-attr -z filter \"{0}\"", file));
+            Process git_check_attr = StartGit(string.Format("check-attr --cached -z filter \"{0}\"", file));
 
             string value = git_check_attr.StandardOutput.ReadToEnd();
 
