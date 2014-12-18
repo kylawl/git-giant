@@ -34,9 +34,12 @@ namespace GitBifrost
             {
                 if (!File.Exists(store_filepath))
                 {
+                    Program.LogLine(LogNoiseLevel.Debug, "File doesn't exist in store, will update");
+
                     if (!Directory.Exists(dir))
                     {
                         Directory.CreateDirectory(dir);
+                        Program.LogLine(LogNoiseLevel.Debug, "Created directory '{0}'", dir);
                     }
 
                     Guid guid = Guid.NewGuid();
@@ -62,8 +65,6 @@ namespace GitBifrost
             {
                 return SyncResult.Failed;
             }
-
-            // TODO: Safety check for comparing size of local file to hash file (incase of collision)
 
             return SyncResult.Skipped;
         }

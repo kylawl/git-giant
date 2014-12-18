@@ -64,6 +64,7 @@ Bifrost needs to install some hooks and filters before you do your first checkou
 
     git bifrost clone <repository> <directory>
 
+### Known Issues ###
 
 ### TODO ###
 - Sftp support
