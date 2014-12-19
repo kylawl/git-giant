@@ -53,6 +53,8 @@ namespace GitBifrost
         {
             int result = Succeeded;
 
+            Enum.TryParse(Environment.GetEnvironmentVariable("GITBIFROST_VERBOSITY"), true, out NoiseLevel);
+
             Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
             Commands["hook-sync"] = CmdHookSync;
@@ -111,7 +113,7 @@ namespace GitBifrost
             string arg_remote_name = args[1];
             string arg_remote_url = args[2];
 
-            LogLine(LogNoiseLevel.Loud, "Bifrost: Updating stores");
+            LogLine(LogNoiseLevel.Normal, "Bifrost: Updating stores");
 
 
             //
@@ -132,21 +134,27 @@ namespace GitBifrost
                     string[] push_tokens = push_info.Split(' ');
 
 
-                    string local_ref = push_tokens[0];
+                    //string local_ref = push_tokens[0];
                     string local_sha = push_tokens[1];
                     //string remote_ref = push_tokens[2];
-                    //string remote_sha = push_tokens[3];
+                    string remote_sha = push_tokens[3];
 
                     if (local_sha != GitEmptySha)
                     {
-                        string[] rev_ids = null;
+                        var rev_ids = new List<string>();
 
                         // Get the individual revision ids between local and the remote commit id's
                         {
-                            string log_args = string.Format("log {0} --not --remotes={1} --pretty=%H -z", local_ref, arg_remote_name);
-                            Process git_proc = StartGit(log_args);
-                            
-                            rev_ids = git_proc.StandardOutput.ReadToEnd().Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
+                            string rev_list_range = remote_sha != GitEmptySha ? string.Format("{0}..{1}", remote_sha, local_sha) : local_sha;
+
+                            Process git_proc = StartGit("rev-list", rev_list_range);
+
+                            string rev_line = null;
+
+                            while ((rev_line = git_proc.StandardOutput.ReadLine()) != null)
+                            {
+                                rev_ids.Add(rev_line);
+                            }
 
                             if (git_proc.WaitForExitFail(true))
                             {
@@ -156,20 +164,25 @@ namespace GitBifrost
 
                         LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating revisions");
 
+
                         foreach (string revision in rev_ids)
                         {
+                            LogLine(LogNoiseLevel.Debug, "Bifrost: Revision {0}", revision);
+
                             // Get files modified in this revision
                             // format: file_status<null>file_name<null>file_status<null>file_name<null>
                             Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
 
                             string proc_data = git_proc.StandardOutput.ReadToEnd();
-
                             if (git_proc.WaitForExitFail(true))
                             {
                                 return git_proc.ExitCode;
                             }
 
                             string[] revision_files = proc_data.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
+                            LogLine(LogNoiseLevel.Debug, "Bifrost: {0} file(s)", revision_files.Length);
+
+//                            LogLine(LogNoiseLevel.Debug, "Revision Count {0}", revision_files.Length);
 
                             for (int i = 0; i < revision_files.Length; i += 2)
                             {
@@ -1084,7 +1097,6 @@ namespace GitBifrost
             psi.Arguments = string.Join(" ", arguments);
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
-//            psi.RedirectStandardInput = true;
             psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\"); // Somehow windows needs this?
 
             if (process.Start())
