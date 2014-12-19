@@ -145,6 +145,24 @@ namespace GitBifrost
 
                         // Get the individual revision ids between local and the remote commit id's
                         {
+                            // TODO:
+                            /* When performing a git-push, we need to determine what files are in the bifrost internal store.
+                             * Now if REMOTE_SHA is 0000 then running a git-rev-list on the full range
+                             * can give us an insanely large list of revisions/files to comb through to see if they're filtered by bifrost.
+                             * This sucks if you're pushing a new branch to a remote because a new branch will have a REMOTE_SHA of 0000.
+                             * The remote will almost certainly have all chances except your fresh ones, so this is just a big waste of time.
+                             * On the other hand if you're pushing to a new repository that was just inited, you will need to give it everything you've got.
+                             * So!
+                             * If BRANCH doesn't exist on REMOTE run try to get a short list of changes REMOTE doesn't have.
+                             * This gets us all the revisions in LOCAL_BRANCH that are not in REMOTE_REPO
+                             * "git log LOCAL_BRANCH --not --remotes=REMOTE --pretty=%H -z"
+                             * However if the remote is totally new uninited, this will yeild no revisions.
+                             * In this case we have to take the long way around, scan the whole local repo to build our list of files to send to the store.
+                             * "git rev-list LOCAL_SHA"
+                             * The reason we don't simply push everything in the bifrost internal store is becasue we want to verify the integrity of the local store (ie no files are missing)
+                             * before we can safely share everything with a new repository.
+                             */
+
                             string rev_list_range = remote_sha != GitEmptySha ? string.Format("{0}..{1}", remote_sha, local_sha) : local_sha;
 
                             Process git_proc = StartGit("rev-list", rev_list_range);
