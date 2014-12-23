@@ -132,7 +132,6 @@ namespace GitBifrost
 
                     string[] push_tokens = push_info.Split(' ');
 
-
                     string local_ref = push_tokens[0];
                     string local_sha = push_tokens[1];
 //                    string remote_ref = push_tokens[2];
@@ -150,7 +149,7 @@ namespace GitBifrost
                              * the integrity of the local store (ie no files are missing/hashes checkout) before we can safely share everything with a new repository.
                              */
 
-                            Process git_proc = StartGit(string.Format("rev-list {0} --not --remotes={1} -z", local_ref, arg_remote_name));
+                            Process git_proc = StartGit(string.Format("rev-list {0} --not --remotes={1}", local_ref, arg_remote_name));
 
                             string rev_line = null;
                             while ((rev_line = git_proc.StandardOutput.ReadLine()) != null)
@@ -164,10 +163,15 @@ namespace GitBifrost
                             }
                         }
 
-                        LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating revisions");
+                        LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating file revisions");
 
+                        string progress_msg = string.Format("\rBifrost: Scanning tracked files in '{0}'", local_ref);
+                       
+                        int revision_index = 0;
                         foreach (string revision in rev_ids)
                         {
+                            Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index++, rev_ids.Count));
+
                             // Get files modified in this revision
                             // format: file_status<null>file_name<null>file_status<null>file_name<null>
                             string[] revision_files;
@@ -207,12 +211,12 @@ namespace GitBifrost
 
                                             int bytes_read = git_proc.StandardOutput.ReadBlock(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
 
-                                            git_proc.StandardOutput.Close();
-                                            if (git_proc.WaitForExitFail(true))
-                                            {
-                                                LogLine(LogNoiseLevel.Debug, "Bifrost: Couldn't check '{0}' for proxy info.", file_rev);
-                                                return Failed;
-                                            }
+                                            // Trash the output stream after we've read our bytes. Don't bother checking the error code 
+                                            // becasuse git errors out when we close STDOUT before reading it completly. We only need to read
+                                            // the first handful of chars so, no point reading the whole file or worrying about the exit code.
+                                            git_proc.StandardOutput.Dispose();
+                                            git_proc.WaitForExit();
+                                            git_proc.Dispose();
 
                                             if (bytes_read == proxy_sig_buffer.Length)
                                             {
@@ -234,6 +238,8 @@ namespace GitBifrost
                                 }
                             }
                         }
+
+                        LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index, rev_ids.Count, ", done."));
                     }
                     else
                     {
@@ -298,16 +304,16 @@ namespace GitBifrost
                     continue;
                 }
 
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Updating store: '{0}'", store_uri.AbsoluteUri);
-
                 int files_pushed = 0;
                 int files_skipped = 0;
                 int files_skipped_late = 0;
 
+                string progress_msg = string.Format("\rBifrost: Updating store '{0}'", store_uri.AbsoluteUri);
+
                 int file_index = 0;
                 foreach (var file_rev in file_revs)
                 {
-                    Log(LogNoiseLevel.Normal, GetProgressString("Bifrost: Updating store", file_index, file_revs.Count, "\r"));
+                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count));
                     ++file_index;
 
                     // Read in the proxy for this revision of the file
@@ -368,7 +374,7 @@ namespace GitBifrost
 
                 store_interface.CloseStore();
 
-                LogLine(LogNoiseLevel.Normal, GetProgressString("Bifrost: Updating store", file_index, file_revs.Count, ", done."));
+                LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count, ", done."));
 
                 if (IsPrimaryStore(store_data))
                 {
@@ -405,9 +411,6 @@ namespace GitBifrost
         {
             string[] staged_files = null;
 
-//            LogLine(LogNoiseLevel.Normal, "Bifrost: Doing pre-commit checks...");
-
-
             // Load get a list of the staged files
             {
                 Process git_proc = StartGit("diff --name-only --cached -z");
@@ -431,13 +434,12 @@ namespace GitBifrost
 
             int file_number = 0;
 
+            string progress_msg = "\rBifrost: Validating staged files";
             foreach (string file in staged_files)
             {
                 bool bifrost_filtered = GetFilterAttribute(file) == "bifrost";
 
-                Log(LogNoiseLevel.Normal, GetProgressString("Bifrost: Validating staged files", file_number, staged_files.Length, "\r"));
-
-                ++file_number;
+                Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_number++, staged_files.Length));
 
                 using (Process git_proc = StartGit(string.Format("show :\"{0}\"", file)))
                 {
@@ -519,7 +521,7 @@ namespace GitBifrost
                 }
             }
 
-            LogLine(LogNoiseLevel.Normal, GetProgressString("Bifrost: Running pre-commit checks", staged_files.Length, staged_files.Length, ", done."));
+            LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, staged_files.Length, staged_files.Length, ", done."));
 
             if (!succeeded)
             {
@@ -1112,7 +1114,7 @@ namespace GitBifrost
             Process process = new Process();
             ProcessStartInfo psi = process.StartInfo;
             psi.FileName = "git";
-            psi.Arguments = string.Join(" ", arguments);
+            psi.Arguments = "--no-pager " + string.Join(" ", arguments);
             psi.UseShellExecute = false;
             psi.RedirectStandardOutput = true;
             psi.EnvironmentVariables["PATH"] = psi.EnvironmentVariables["PATH"].Replace(@"\", @"\\"); // Somehow windows needs this?
