@@ -113,14 +113,13 @@ namespace GitBifrost
             string arg_remote_name = args[1];
             string arg_remote_url = args[2];
 
-            LogLine(LogNoiseLevel.Normal, "Bifrost: Updating stores");
-
+            char[] proxy_sig_buffer = new char[BifrostProxyId.Length];
 
             //
             // Collect up all the file revisions we need to push to the stores
             //
 
-            var file_revs = new List<Tuple<string, string>>();
+            var file_revs = new List<string>();
 
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
@@ -134,41 +133,26 @@ namespace GitBifrost
                     string[] push_tokens = push_info.Split(' ');
 
 
-                    //string local_ref = push_tokens[0];
+                    string local_ref = push_tokens[0];
                     string local_sha = push_tokens[1];
-                    //string remote_ref = push_tokens[2];
-                    string remote_sha = push_tokens[3];
+//                    string remote_ref = push_tokens[2];
+//                    string remote_sha = push_tokens[3];
 
                     if (local_sha != GitEmptySha)
                     {
-                        var rev_ids = new List<string>();
-
                         // Get the individual revision ids between local and the remote commit id's
+                        var rev_ids = new List<string>();
                         {
-                            // TODO:
-                            /* When performing a git-push, we need to determine what files are in the bifrost internal store.
-                             * Now if REMOTE_SHA is 0000 then running a git-rev-list on the full range
-                             * can give us an insanely large list of revisions/files to comb through to see if they're filtered by bifrost.
-                             * This sucks if you're pushing a new branch to a remote because a new branch will have a REMOTE_SHA of 0000.
-                             * The remote will almost certainly have all chances except your fresh ones, so this is just a big waste of time.
-                             * On the other hand if you're pushing to a new repository that was just inited, you will need to give it everything you've got.
-                             * So!
-                             * If BRANCH doesn't exist on REMOTE run try to get a short list of changes REMOTE doesn't have.
-                             * This gets us all the revisions in LOCAL_BRANCH that are not in REMOTE_REPO
-                             * "git log LOCAL_BRANCH --not --remotes=REMOTE --pretty=%H -z"
-                             * However if the remote is totally new uninited, this will yeild no revisions.
-                             * In this case we have to take the long way around, scan the whole local repo to build our list of files to send to the store.
-                             * "git rev-list LOCAL_SHA"
-                             * The reason we don't simply push everything in the bifrost internal store is becasue we want to verify the integrity of the local store (ie no files are missing)
-                             * before we can safely share everything with a new repository.
+                            /* When performing a git-push, we need to determine what files are in the bifrost internal store and that have yet to be pushed to a primary store.
+                             * This means that we need to comb through all files in all commits in local_ref that have yet to be pushed. 
+                             * If you've been working for a very long time without a push, this can take a bit of time.
+                             * The reason we don't simply push everything in the bifrost internal store is becasue we want to verify 
+                             * the integrity of the local store (ie no files are missing/hashes checkout) before we can safely share everything with a new repository.
                              */
 
-                            string rev_list_range = remote_sha != GitEmptySha ? string.Format("{0}..{1}", remote_sha, local_sha) : local_sha;
-
-                            Process git_proc = StartGit("rev-list", rev_list_range);
+                            Process git_proc = StartGit(string.Format("rev-list {0} --not --remotes={1} -z", local_ref, arg_remote_name));
 
                             string rev_line = null;
-
                             while ((rev_line = git_proc.StandardOutput.ReadLine()) != null)
                             {
                                 rev_ids.Add(rev_line);
@@ -182,25 +166,23 @@ namespace GitBifrost
 
                         LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating revisions");
 
-
                         foreach (string revision in rev_ids)
                         {
-                            LogLine(LogNoiseLevel.Debug, "Bifrost: Revision {0}", revision);
-
                             // Get files modified in this revision
                             // format: file_status<null>file_name<null>file_status<null>file_name<null>
-                            Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
-
-                            string proc_data = git_proc.StandardOutput.ReadToEnd();
-                            if (git_proc.WaitForExitFail(true))
+                            string[] revision_files;
                             {
-                                return git_proc.ExitCode;
+                                Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
+                                string proc_data = git_proc.StandardOutput.ReadToEnd();
+                                if (git_proc.WaitForExitFail(true))
+                                {
+                                    return git_proc.ExitCode;
+                                }
+
+                                revision_files = proc_data.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
                             }
-
-                            string[] revision_files = proc_data.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
-                            LogLine(LogNoiseLevel.Debug, "Bifrost: {0} file(s)", revision_files.Length);
-
-//                            LogLine(LogNoiseLevel.Debug, "Revision Count {0}", revision_files.Length);
+                                
+                            LogLine(LogNoiseLevel.Debug, "Bifrost: Revision {0}, {1} file(s)", revision, revision_files.Length);
 
                             for (int i = 0; i < revision_files.Length; i += 2)
                             {
@@ -218,15 +200,35 @@ namespace GitBifrost
                                 {
                                     try
                                     {
-                                        if (GetFilterAttribute(file) == "bifrost")
+                                        string file_rev = string.Format("{0}:{1}", revision, file);
+                                        bool is_bifrost_proxy = false;
                                         {
-                                            LogLine(LogNoiseLevel.Debug, "Will push '{0}'", file);
-                                            file_revs.Add(new Tuple<string, string>(revision, file));
+                                            Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
+
+                                            int bytes_read = git_proc.StandardOutput.ReadBlock(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
+
+                                            git_proc.StandardOutput.Close();
+                                            if (git_proc.WaitForExitFail(true))
+                                            {
+                                                LogLine(LogNoiseLevel.Debug, "Bifrost: Couldn't check '{0}' for proxy info.", file_rev);
+                                                return Failed;
+                                            }
+
+                                            if (bytes_read == proxy_sig_buffer.Length)
+                                            {
+                                                is_bifrost_proxy = new string(proxy_sig_buffer) == BifrostProxyId;
+                                            }
+                                        }
+
+                                        if (is_bifrost_proxy)
+                                        {
+                                            LogLine(LogNoiseLevel.Debug, "Bifrost: Will push '{0}'", file);
+                                            file_revs.Add(file_rev);
                                         }
                                     }
                                     catch
                                     {
-                                        LogLine(LogNoiseLevel.Normal, "Failed to get file from diff-tree.");
+                                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to get file from diff-tree.");
                                         return Failed;
                                     }
                                 }
@@ -243,10 +245,10 @@ namespace GitBifrost
 
             if (file_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Local store directory is missing but should have files.");
+                LogLine(LogNoiseLevel.Normal, "Bifrost: Local store directory is missing but should contain files.");
                 foreach (var file_rev in file_revs)
                 {
-                    LogLine(LogNoiseLevel.Normal, "    {0}:{1}", file_rev.Item1.Substring(0, 7), file_rev.Item2);
+                    LogLine(LogNoiseLevel.Normal, file_rev);
                 }
                 return Failed;
             }
@@ -309,9 +311,7 @@ namespace GitBifrost
                     ++file_index;
 
                     // Read in the proxy for this revision of the file
-                    string rile_rev_string = string.Format("{0}:{1}", file_rev.Item1, file_rev.Item2);
-
-                    Process git_proc = StartGit(string.Format("show \"{0}\"", rile_rev_string));
+                    Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
 
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
                     string file_sha = git_proc.StandardOutput.ReadLine();
@@ -326,7 +326,7 @@ namespace GitBifrost
                     if (!bifrost_ver.StartsWith(BifrostProxyId))
                     {
                         store_interface.CloseStore();
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev.Item2);
+                        LogLine(LogNoiseLevel.Normal, "Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev);
                         return Failed;
                     }
 
@@ -342,7 +342,7 @@ namespace GitBifrost
                     }
                     else
                     {
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to find revision '{0}' of '{1}' in local store.", file_rev.Item1, file_rev.Item2);
+                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to find revision '{0}' in local store.", file_rev);
                     }
 
                     if (result == SyncResult.Failed)
