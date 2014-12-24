@@ -42,11 +42,8 @@
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Xml" />
     <Reference Include="Mono.Posix" />
-    <Reference Include="Renci.SshNet">
-      <HintPath>packages\SSH.NET.2013.4.7\lib\net40\Renci.SshNet.dll</HintPath>
-    </Reference>
     <Reference Include="System.Net.FtpClient">
-      <HintPath>packages\System.Net.FtpClient.1.0.5281.14359\lib\net40\System.Net.FtpClient.dll</HintPath>
+      <HintPath>..\packages\System.Net.FtpClient.1.0.5281.14359\lib\net40\System.Net.FtpClient.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
@@ -58,12 +55,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="LICENSE" />
-    <None Include="README.md" />
-    <None Include="packages.config" />
     <None Include="git-bifrost">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

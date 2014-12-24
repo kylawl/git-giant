@@ -81,7 +81,7 @@ namespace GitBifrost
                         }
                         catch
                         {
-                            Program.LogLine(LogNoiseLevel.Normal, "Bifrost: Unable to created directory '{0}' in '{1}'. Do you have the correct permissions?", 
+                            Program.LogLine(LogNoiseLevel.Normal, "Bifrost: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
                                 dir, Client.GetWorkingDirectory());
 
                             return SyncResult.Failed;
