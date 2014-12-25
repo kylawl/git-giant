@@ -177,7 +177,7 @@ namespace GitBifrost
                             // format: file_status<null>file_name<null>file_status<null>file_name<null>
                             string[] revision_files;
                             {
-                                Process git_proc = StartGit("diff-tree --no-commit-id --name-status -r -z", revision);
+                                Process git_proc = StartGit("diff-tree --no-commit-id --name-status --root -r -z", revision);
                                 string proc_data = git_proc.StandardOutput.ReadToEnd();
                                 if (git_proc.WaitForExitFail(true))
                                 {
