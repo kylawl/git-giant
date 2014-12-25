@@ -39,6 +39,7 @@ namespace GitBifrost
         const int FirstFewBytes = 8000;
 
         const string BifrostProxyId = "git-bifrost-proxy-file";
+        static readonly int BifrostProxyIdNumBytes = Encoding.UTF8.GetByteCount(BifrostProxyId);
 
         const string TextSizeThresholdKey = "repo.text-size-threshold";
         const int DefaultTextSizeThreshold = 5 * Megabytes;
@@ -165,12 +166,12 @@ namespace GitBifrost
 
                         LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating file revisions");
 
-                        string progress_msg = string.Format("\rBifrost: Scanning tracked files in '{0}'", local_ref);
+                        string progress_msg = string.Format("Bifrost: Scanning tracked files in '{0}'", local_ref);
                        
                         int revision_index = 0;
                         foreach (string revision in rev_ids)
                         {
-                            Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index++, rev_ids.Count));
+                            Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index++, rev_ids.Count, "\r"));
 
                             // Get files modified in this revision
                             // format: file_status<null>file_name<null>file_status<null>file_name<null>
@@ -209,7 +210,7 @@ namespace GitBifrost
                                         {
                                             Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
 
-                                            int bytes_read = git_proc.StandardOutput.ReadBlock(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
+                                            int bytes_read = git_proc.StandardOutput.Read(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
 
                                             // Trash the output stream after we've read our bytes. Don't bother checking the error code 
                                             // becasuse git errors out when we close STDOUT before reading it completly. We only need to read
@@ -308,12 +309,12 @@ namespace GitBifrost
                 int files_skipped = 0;
                 int files_skipped_late = 0;
 
-                string progress_msg = string.Format("\rBifrost: Updating store '{0}'", store_uri.AbsoluteUri);
+                string progress_msg = string.Format("Bifrost: Updating store '{0}'", store_uri.AbsoluteUri);
 
                 int file_index = 0;
                 foreach (var file_rev in file_revs)
                 {
-                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count));
+                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count, "\r"));
                     ++file_index;
 
                     // Read in the proxy for this revision of the file
@@ -426,7 +427,7 @@ namespace GitBifrost
                 staged_files = proc_output.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
             }
 
-            char[] scratch_buffer = new char[(64 * Kilobytes) / sizeof(char)];
+            byte[] scratch_buffer = new byte[64 * Kilobytes];
 
             bool succeeded = true;
             bool files_over_limit = false;
@@ -434,24 +435,25 @@ namespace GitBifrost
 
             int file_number = 0;
 
-            string progress_msg = "\rBifrost: Validating staged files";
+            string progress_msg = "Bifrost: Validating staged files";
             foreach (string file in staged_files)
             {
                 bool bifrost_filtered = GetFilterAttribute(file) == "bifrost";
 
-                Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_number++, staged_files.Length));
+                Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_number++, staged_files.Length, "\r"));
 
                 using (Process git_proc = StartGit(string.Format("show :\"{0}\"", file)))
                 {
+                    Stream proc_stream = git_proc.StandardOutput.BaseStream;
                     if (bifrost_filtered)
                     {
                         // If the file is already filtered by bifrost, make sure that the staged file is in fact
                         // a bifrost proxy file if it isn't the user needs to restage the file in order to allow the clean filter to run.
                         // This is likely to happen when you modify your git attributes to include a file in bifrost.
 
-                        int chars_read = git_proc.StandardOutput.ReadBlock(scratch_buffer, 0, BifrostProxyId.Length);
+                        int bytes_read = proc_stream.Read(scratch_buffer, 0, BifrostProxyIdNumBytes);
 
-                        string proxyfile_tag = new string(scratch_buffer, 0, chars_read);
+                        string proxyfile_tag = Encoding.UTF8.GetString(scratch_buffer, 0, bytes_read);
 
                         if (proxyfile_tag != BifrostProxyId)
                         {
@@ -466,20 +468,19 @@ namespace GitBifrost
                     {
                         LogLine(LogNoiseLevel.Debug, "Bifrost: Unfiltered '{0}'.", file);
 
-                        int chars_read = git_proc.StandardOutput.ReadBlock(scratch_buffer, 0, scratch_buffer.Length);
-                        int size = chars_read * sizeof(char);
-
-                        bool is_binary = GetAttributeSet(file, "binary");
-
                         // Just becasue there isn't an attribute saying it's binary, that doesn't mean it isn't.
                         // Scan the first block to see if it is.
 
+                        bool is_binary = GetAttributeSet(file, "binary");
+
+                        int bytes_read = proc_stream.Read(scratch_buffer, 0, scratch_buffer.Length);
+
                         if (!is_binary)
                         {
-                            for (int i = 0; i < chars_read; ++i)
+                            for (int i = 0; i < bytes_read / 2; ++i)
                             {
-                                char c = scratch_buffer[i];
-                                if ((byte)c == 0 || (byte)(c >> 8) == 0)
+                                byte c = scratch_buffer[i];
+                                if (c == 0)
                                 {
                                     is_binary = true;
                                     break;
@@ -487,12 +488,14 @@ namespace GitBifrost
                             }
                         }
 
+                        int size = bytes_read;
+
                         do
                         {
-                            chars_read = git_proc.StandardOutput.ReadBlock(scratch_buffer, 0, scratch_buffer.Length);
-                            size += chars_read * sizeof(char);
+                            bytes_read = git_proc.StandardOutput.BaseStream.Read(scratch_buffer, 0, scratch_buffer.Length);
+                            size += bytes_read;
                         }
-                        while(chars_read > 0);
+                        while(bytes_read > 0);
 
                         if (git_proc.WaitForExitFail())
                         {
@@ -513,7 +516,7 @@ namespace GitBifrost
                         {
                             succeeded = false;
                             string type = is_binary ? "Binary" : "Text";
-                            LogLine(LogNoiseLevel.Normal, "Bifrost: {0} file too big '{1}' ({2} bytes).", type, file, size);
+                            LogLine(LogNoiseLevel.Normal, "Bifrost: {0} file too big '{1}' ({2:N0} bytes).", type, file, size);
 
                             files_over_limit = true;
                         }

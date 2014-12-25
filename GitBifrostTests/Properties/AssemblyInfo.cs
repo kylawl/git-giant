@@ -1,4 +1,6 @@
-﻿using System.Reflection;
+﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
+
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 // Information about this assembly is defined by the following attributes.
@@ -7,9 +9,9 @@ using System.Runtime.CompilerServices;
 [assembly: AssemblyTitle("GitBifrostTests")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("")]
-[assembly: AssemblyCopyright("kylerocha")]
+[assembly: AssemblyCompany("Luminawesome Games, Ltd")]
+[assembly: AssemblyProduct("GitBifrost Unit Tests")]
+[assembly: AssemblyCopyright("Copyright © 2014 Luminawesome Games, Ltd. All Rights Reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 

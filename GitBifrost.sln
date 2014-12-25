@@ -23,7 +23,7 @@ Global
 		{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
-		StartupItem = GitBifrost\GitBifrost.csproj
+		StartupItem = GitBifrostTests\GitBifrostTests.csproj
 		Policies = $0
 		$0.TextStylePolicy = $1
 		$1.inheritsSet = VisualStudio
