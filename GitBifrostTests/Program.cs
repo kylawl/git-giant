@@ -216,7 +216,7 @@ namespace GitBifrostTests
                 // Modified big text file from before
                 string modifiedBigTextName = "some/directory/TextFileBig.big_txt";
                 byte[] modifiedBigTextData = new byte[bigTextData.Length];
-                RandomText(rand, bigTextData);
+                RandomText(rand, modifiedBigTextData);
                 string modifiedBigTextSHA = SHA1FromBytes(modifiedBigTextData);
                 string modifiedBigTextLocalStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(modifiedBigTextSHA));
 
