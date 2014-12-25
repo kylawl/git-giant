@@ -23,6 +23,7 @@
     <CustomCommands>
       <CustomCommands>
         <Command type="BeforeExecute" workingdir="~/dev" />
+        <Command type="AfterBuild" command="mono ${SolutionDir}/GitBifrostTests/bin/Debug/GitBifrostTests.exe" workingdir="${SolutionDir}" externalConsole="True" />
       </CustomCommands>
     </CustomCommands>
     <Commandlineparameters>hook-push</Commandlineparameters>

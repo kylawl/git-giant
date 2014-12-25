@@ -12,6 +12,8 @@ namespace GitBifrostTests
     class Program
     {
         const string CommonRemote = "commonremote.git";
+        static string CommonRemotePath;
+        static string CommonRemoteStore;
         static string TestingRoot;
 
         public static void Main(string[] args)
@@ -25,6 +27,12 @@ namespace GitBifrostTests
 
             TestingRoot = Path.Combine(Directory.GetCurrentDirectory(), "bifrost_test_products");
             Directory.SetCurrentDirectory(TestingRoot);
+
+            CommonRemotePath = Path.Combine(TestingRoot, CommonRemote);
+            CommonRemoteStore = Path.Combine(TestingRoot, "commonremote.store");
+
+            Directory.CreateDirectory(CommonRemoteStore);
+            StartProcessWaitForExitCode("git", "init --bare " + CommonRemotePath);
 
             TestAddCommitPush();
             TestCloneEditPush();
@@ -61,7 +69,6 @@ namespace GitBifrostTests
             byte[] bigBinaryData = new byte[500 * 1024];
             rand.NextBytes(bigBinaryData);
             string bigBinarySHA = SHA1FromBytes(bigBinaryData);
-//            File.WriteAllBytes(bigBinaryName, bigBinaryData);
             using (FileStream stream = File.Create(bigBinaryName))
             {
                 stream.Write(bigBinaryData, 0, bigBinaryData.Length);
@@ -87,7 +94,6 @@ namespace GitBifrostTests
                 stream.Write(bigTextData, 0, bigTextData.Length);
             }
 
-
             IsZero("Add all files", StartProcessWaitForExitCode("git", "add --all"));
 
             //
@@ -108,40 +114,58 @@ namespace GitBifrostTests
             IsZero("Valid commit", StartProcessWaitForExitCode("git", "commit -m \"Added test files.\""));
 
             // Inspect the internal bifrost store to make sure the files in there are good
-            string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
+            {
+                string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
 
-            AreEqual("Internal store file count", 3, files.Length);
+                AreEqual("Internal store file count", 3, files.Length);
 
-            // Small binary
-            string smallBinaryStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(smallBinarySHA));
-            IsTrue(string.Format("Internal store contains {0}", smallBinaryStorePath), files.Contains(smallBinaryStorePath));
+                // Small binary
+                {
+                    string smallBinaryStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(smallBinarySHA));
+                    IsTrue(string.Format("Internal store contains {0}", smallBinaryStorePath), files.Contains(smallBinaryStorePath));
 
-            byte[] smallBinaryTestBytes = File.ReadAllBytes(smallBinaryStorePath);
-            IsTrue(string.Format("File bytes consistent {0}", smallBinaryName), ArraysEqual(smallBinaryTestBytes, smallBinaryData));
+                    byte[] smallBinaryTestBytes = File.ReadAllBytes(smallBinaryStorePath);
+                    IsTrue(string.Format("File bytes consistent {0}", smallBinaryName), ArraysEqual(smallBinaryTestBytes, smallBinaryData));
 
-            AreEqual("Small binary SHA", SHA1FromBytes(smallBinaryTestBytes), smallBinarySHA);
+                    AreEqual("Small binary SHA", SHA1FromBytes(smallBinaryTestBytes), smallBinarySHA);
+                }
 
-            // Big binary
-            string bigBinaryStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA));
-            IsTrue(string.Format("Internal store contains {0}", bigBinaryStorePath), files.Contains(bigBinaryStorePath));
 
-            byte[] bigBinaryTestBytes = File.ReadAllBytes(bigBinaryStorePath);
-            IsTrue(string.Format("File bytes consistent {0}", bigBinaryName), ArraysEqual(bigBinaryTestBytes, bigBinaryData));
+                // Big binary
+                {
+                    string bigBinaryStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA));
+                    IsTrue(string.Format("Internal store contains {0}", bigBinaryStorePath), files.Contains(bigBinaryStorePath));
 
-            AreEqual("Small binary SHA", SHA1FromBytes(bigBinaryTestBytes), bigBinarySHA);
+                    byte[] bigBinaryTestBytes = File.ReadAllBytes(bigBinaryStorePath);
+                    IsTrue(string.Format("File bytes consistent {0}", bigBinaryName), ArraysEqual(bigBinaryTestBytes, bigBinaryData));
 
-            // Big text
-            string bitTextStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigTextSHA));
-            IsTrue(string.Format("Internal store contains {0}", bitTextStorePath), files.Contains(bitTextStorePath));
+                    AreEqual("Small binary SHA", SHA1FromBytes(bigBinaryTestBytes), bigBinarySHA);
+                }
 
-            byte[] bigTextTestBytes = File.ReadAllBytes(bitTextStorePath);
-            IsTrue(string.Format("File bytes consistent {0}", bigTextName), ArraysEqual(bigTextTestBytes, bigTextTestBytes));
+                // Big text
+                {
+                    string bitTextStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigTextSHA));
+                    IsTrue(string.Format("Internal store contains {0}", bitTextStorePath), files.Contains(bitTextStorePath));
 
-            AreEqual("Small binary SHA", SHA1FromBytes(bigTextTestBytes), bigTextSHA);
+                    byte[] bigTextTestBytes = File.ReadAllBytes(bitTextStorePath);
+                    IsTrue(string.Format("File bytes consistent {0}", bigTextName), ArraysEqual(bigTextTestBytes, bigTextTestBytes));
+
+                    AreEqual("Small binary SHA", SHA1FromBytes(bigTextTestBytes), bigTextSHA);
+                }
+            }
 
             //
             // Push
             //
+
+            // Push should fail becasue we don't have a .gitbifrost config to tell us where the primary store is
+            NotZero("Fail push to empty remote", StartProcessWaitForExitCode("git", string.Format("push {0} master", CommonRemotePath)));
+
+            WriteBifrostConfig();
+
+            IsZero("Successfull push to remote and store", StartProcessWaitForExitCode("git", string.Format("push {0} master", CommonRemotePath)));
+
+            // TODO: Check remote store for consistency
 
             Directory.SetCurrentDirectory(TestingRoot);
         }
@@ -150,7 +174,23 @@ namespace GitBifrostTests
         {
             string test_root = Path.Combine(TestingRoot, "clone_edit_push");
 
-            IsZero("Bifrost clone", StartProcessWaitForExitCode("git", "bifrost " + test_root));
+            // The first clone should fail becasue there is no .gitbifrost file checked in, 
+            // therefor there is no way to retreive files form the store
+            NotZero("Bifrost clone", StartProcessWaitForExitCode("git", string.Format("bifrost clone {0} {1}", CommonRemotePath, test_root)));
+
+            Directory.SetCurrentDirectory(test_root);
+
+            WriteBifrostConfig();
+
+            // Force checkout with attribute file in place
+            IsZero("Bifrost checkout", StartProcessWaitForExitCode("git", string.Format("checkout -f master")));
+
+            // TODO: Check local store for consistency
+            // TODO: Check working set for consistency
+            // TODO: Add .gitbifrost to repo
+            // TODO: Add/Modify binary file and make a new commit/push
+
+            Directory.SetCurrentDirectory(TestingRoot);
         }
             
         // Testers
@@ -158,8 +198,12 @@ namespace GitBifrostTests
         {
             if (!(value == 0))
             {
+
                 throw new Exception(string.Format("'{0}' failed, value is not 0.", test_name));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         static void NotZero(string test_name, int value)
@@ -168,6 +212,9 @@ namespace GitBifrostTests
             {
                 throw new Exception(string.Format("'{0}' failed, value is 0", test_name));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         static void AreEqual<T>(string test_name, T a, T b)
@@ -176,6 +223,9 @@ namespace GitBifrostTests
             {
                 throw new Exception(string.Format("'{0}' failed, values are not equal ({1} != {2})", test_name, a, b));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         static void AreNotEqual<T>(string test_name, T a, T b)
@@ -184,6 +234,9 @@ namespace GitBifrostTests
             {
                 throw new Exception(string.Format("'{0}' failed, values are equal ({1} == {2})", test_name, a, b));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         static bool ArraysEqual<T>(T[] a1, T[] a2)
@@ -211,6 +264,9 @@ namespace GitBifrostTests
             {
                 throw new Exception(string.Format("'{0}' failed, value is true", test_name));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         static void IsTrue(string test_name, bool isTrue)
@@ -219,9 +275,24 @@ namespace GitBifrostTests
             {
                 throw new Exception(string.Format("'{0}' failed, value is false", test_name));
             }
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Error.WriteLine("Test: {0}... Passed", test_name);
+            Console.ResetColor();
         }
 
         // Utils
+
+        static void WriteBifrostConfig()
+        {
+            File.WriteAllText(".gitbifrost", string.Format(@"
+[repo]
+    text-size-threshold = 5242880
+    bin-size-threshold = 102400
+[store ""luminawesome.mac""]
+    remote = {0}
+    url = {1}
+    primary = true", CommonRemotePath, CommonRemoteStore));
+        }
 
         static string GetStorePathFromSHA(string sha)
         {
