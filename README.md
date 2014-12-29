@@ -72,3 +72,36 @@ Bifrost needs to install some hooks and filters before you do your first checkou
 - If you download a git archive from github, you'll only have the proxy files instead of the actual binary data. Add support for sucking down data from proxy files only without a git repo.
 - If you do a normal `git clone` rather than a `git bifrost clone`, you're hooped and you'll have to start over. This kind of sucks
 - Add support for compressing data before uploading to store
+
+
+### Common .gitattributes ###
+
+	# Common
+	*.bmp  filter=bifrost
+	*.exe  filter=bifrost
+	*.dae  filter=bifrost
+	*.dll  filter=bifrost
+	*.fbx  filter=bifrost
+	*.ico  filter=bifrost
+	*.jpg  filter=bifrost
+	*.ma   filter=bifrost
+	*.max  filter=bifrost
+	*.mb   filter=bifrost
+	*.mp3  filter=bifrost
+	*.obj  filter=bifrost
+	*.ogg  filter=bifrost
+	*.png  filter=bifrost
+	*.psd  filter=bifrost
+	*.so   filter=bifrost
+	*.tga  filter=bifrost
+	*.ttf  filter=bifrost
+	*.tiff filter=bifrost
+	*.ztl  filter=bifrost
+	*.wav  filter=bifrost
+
+	# UE4
+	*.uasset filter=bifrost
+	*.umap   filter=bifrost
+
+	# Unity
+	*.unity filter=bifrost"

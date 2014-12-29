@@ -66,8 +66,6 @@ namespace GitBifrost
             Commands["help"] = CmdHelp;
             Commands["clone"] = CmdClone;
             Commands["init"] = CmdInit;
-            Commands["activate"] = CmdActivate;
-
 
             string arg_command = args.Length > 0 ? args[0].ToLower() : null;
 
@@ -827,69 +825,7 @@ namespace GitBifrost
         {
             return InstallBifrost();
         }
-
-        static int CmdActivate(string[] args)
-        {
-            InstallBifrost();
-
-            // Generate sample config
-
-            if (args.Contains("--test-config", StringComparer.CurrentCultureIgnoreCase))
-            {
-                GitConfigSet(TextSizeThresholdKey, DefaultTextSizeThreshold.ToString(), ".gitbifrost");
-                GitConfigSet(BinSizeThresholdKey, DefaultBinSizeThreshold.ToString(), ".gitbifrost");
-
-//                GitConfigSet("localstore.depth", "0", ".gitbifrost");
-
-                GitConfigSet("store.luminawesome.mac.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac.url", "ftp://localhost/dev/BifrostTestCDN", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac.primary", "true", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac.username", "USERNAME", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac.password", "PASSWORD", ".gitbifrost");
-
-                GitConfigSet("store.luminawesome.mac-backup.remote", "/Users/kylerocha/dev/BifrostTest.git", ".gitbifrost");
-                GitConfigSet("store.luminawesome.mac-backup.url", "/Users/kylerocha/dev/BifrostTestCDN2", ".gitbifrost");
-            }
-
-            if (args.Contains("-ica", StringComparer.CurrentCultureIgnoreCase) ||
-                args.Contains("--include-common-attributes", StringComparer.CurrentCultureIgnoreCase))
-            {
-                File.WriteAllText(".gitattributes", 
-@"## Common
-*.bmp  filter=bifrost
-*.exe  filter=bifrost
-*.dae  filter=bifrost
-*.dll  filter=bifrost
-*.fbx  filter=bifrost
-*.ico  filter=bifrost
-*.jpg  filter=bifrost
-*.ma   filter=bifrost
-*.max  filter=bifrost
-*.mb   filter=bifrost
-*.mp3  filter=bifrost
-*.obj  filter=bifrost
-*.ogg  filter=bifrost
-*.png  filter=bifrost
-*.psd  filter=bifrost
-*.so   filter=bifrost
-*.tga  filter=bifrost
-*.ttf  filter=bifrost
-*.tiff filter=bifrost
-*.ztl  filter=bifrost
-*.wav  filter=bifrost
-
-## UE4
-*.uasset filter=bifrost
-*.umap   filter=bifrost
-
-## Unity
-*.unity filter=bifrost"
-);
-            }
-
-            return Succeeded;
-        }
-
+            
         static int InstallBifrost()
         {
             if (!Directory.Exists(".git"))

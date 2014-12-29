@@ -7,6 +7,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitBifrost", "GitBifrost\Gi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitBifrostTests", "GitBifrostTests\GitBifrostTests.csproj", "{3BABDEDD-B9B5-435F-98A4-4C655C0B0C1E}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8AC29176-9E95-47C0-A2A1-CA66AE1512B6}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+		LICENSE = LICENSE
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +27,8 @@ Global
 		{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
 		StartupItem = GitBifrostTests\GitBifrostTests.csproj
