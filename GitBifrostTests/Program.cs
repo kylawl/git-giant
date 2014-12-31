@@ -15,6 +15,26 @@ namespace GitBifrostTests
         static string CommonRemotePath;
         static string CommonRemoteStore;
         static string TestingRoot;
+        
+        public static string SanitizePath(string path)
+        {
+#if !(__MonoCS__)            
+            return path.Replace('/', '\\');
+#endif
+        }
+
+        public static void SanitizePaths(string[] paths)
+        {
+            for(int i = 0; i < paths.Length; ++i)
+            {
+                paths[i] = SanitizePath(paths[i]);
+            }
+        }
+
+        public static string PathCombine(params string[] paths)
+        {
+            return SanitizePath(Path.Combine(paths));
+        }
 
         public static void Main(string[] args)
         {
@@ -29,11 +49,11 @@ namespace GitBifrostTests
 
             Directory.CreateDirectory("bifrost_test_products");
 
-            TestingRoot = Path.Combine(Directory.GetCurrentDirectory(), "bifrost_test_products");
+            TestingRoot = PathCombine(Directory.GetCurrentDirectory(), "bifrost_test_products");
             Directory.SetCurrentDirectory(TestingRoot);
 
-            CommonRemotePath = Path.Combine(TestingRoot, CommonRemote);
-            CommonRemoteStore = Path.Combine(TestingRoot, "commonremote.store");
+            CommonRemotePath = PathCombine(TestingRoot, CommonRemote);
+            CommonRemoteStore = PathCombine(TestingRoot, "commonremote.store");
 
             Directory.CreateDirectory(CommonRemoteStore);
             StartProcessWaitForExitCode("git", "init --bare " + CommonRemotePath);
@@ -49,14 +69,14 @@ namespace GitBifrostTests
             byte[] smallBinaryData = new byte[50 * 1024];
             rand.NextBytes(smallBinaryData);
             string smallBinarySHA = SHA1FromBytes(smallBinaryData);
-            string smallBinaryLocalStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(smallBinarySHA));
+            string smallBinaryLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(smallBinarySHA));
 
             // Binary file too big to go in the normal git repo, must pass through bifrost
             string bigBinaryName = "BinaryFileBig.bin";
             byte[] bigBinaryData = new byte[500 * 1024];
             rand.NextBytes(bigBinaryData);
             string bigBinarySHA = SHA1FromBytes(bigBinaryData);
-            string bigBinaryLocalStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA));
+            string bigBinaryLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA));
 
             // Text file small enough to pass through the filter
             string smallTextName = "TextFileSmall.txt";
@@ -69,7 +89,7 @@ namespace GitBifrostTests
             byte[] bigTextData = new byte[10 * 1024 * 1024];
             RandomText(rand, bigTextData);
             string bigTextSHA = SHA1FromBytes(bigTextData);
-            string bigTextLocalStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigTextSHA));
+            string bigTextLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigTextSHA));
 
 
             //
@@ -80,7 +100,7 @@ namespace GitBifrostTests
                 // Add
                 //
 
-                string test_root = Path.Combine(TestingRoot, "add_commit_push");
+                string test_root = PathCombine(TestingRoot, "add_commit_push");
 
                 IsZero("Init git repo", StartProcessWaitForExitCode("git", "init " + test_root));
 
@@ -115,6 +135,7 @@ namespace GitBifrostTests
                 // Inspect the internal bifrost store to make sure the files in there are good
                 {
                     string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
+                    SanitizePaths(files);
 
                     AreEqual("Internal store file count", 3, files.Length);
 
@@ -145,21 +166,22 @@ namespace GitBifrostTests
                 // Check remote store for consistency
                 {
                     string[] files = Directory.GetFiles(CommonRemoteStore, "*.*", SearchOption.AllDirectories);
+                    SanitizePaths(files);
 
                     AreEqual("Internal store file count", 3, files.Length);
 
                     // Small binary
-                    string smallBinaryCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(smallBinarySHA));
+                    string smallBinaryCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(smallBinarySHA));
                     IsTrue(string.Format("Internal store contains {0}", smallBinaryLocalStorePath), files.Contains(smallBinaryCommonStorePath));
                     CheckFileConsistency(smallBinaryName, smallBinaryLocalStorePath, smallBinarySHA, smallBinaryData);
 
                     // Big binary
-                    string bigBinaryCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA));
+                    string bigBinaryCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA));
                     IsTrue(string.Format("Internal store contains {0}", bigBinaryLocalStorePath), files.Contains(bigBinaryCommonStorePath));
                     CheckFileConsistency(bigBinaryName, bigBinaryLocalStorePath, bigBinarySHA, bigBinaryData);
 
                     // Big text
-                    string bigTextCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(bigTextSHA));
+                    string bigTextCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(bigTextSHA));
                     IsTrue(string.Format("Internal store contains {0}", bigTextLocalStorePath), files.Contains(bigTextCommonStorePath));
                     CheckFileConsistency(bigTextName, bigTextLocalStorePath, bigTextSHA, bigTextData);
                 }
@@ -177,7 +199,7 @@ namespace GitBifrostTests
                 // Clone
                 // 
 
-                string test_root = Path.Combine(TestingRoot, "clone_edit_push");
+                string test_root = PathCombine(TestingRoot, "clone_edit_push");
 
                 // The first clone should fail becasue there is no .gitbifrost file checked in, 
                 // therefor there is no way to retreive files form the store
@@ -193,6 +215,7 @@ namespace GitBifrostTests
                 // Inspect the internal bifrost store to make sure the files in there are good
                 {
                     string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
+                    SanitizePaths(files);
 
                     AreEqual("Internal store file count", 3, files.Length);
 
@@ -218,14 +241,14 @@ namespace GitBifrostTests
                 byte[] modifiedBigTextData = new byte[bigTextData.Length];
                 RandomText(rand, modifiedBigTextData);
                 string modifiedBigTextSHA = SHA1FromBytes(modifiedBigTextData);
-                string modifiedBigTextLocalStorePath = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(modifiedBigTextSHA));
+                string modifiedBigTextLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(modifiedBigTextSHA));
 
                 // Another binary file too big to go in the normal git repo, must pass through bifrost
                 string bigBinaryName2 = "BinaryFileBigNumber2.bin";
                 byte[] bigBinaryData2 = new byte[50 * 1024 * 1024];
                 rand.NextBytes(bigBinaryData2);
                 string bigBinarySHA2 = SHA1FromBytes(bigBinaryData2);
-                string bigBinaryLocalStorePath2 = Path.Combine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA2));
+                string bigBinaryLocalStorePath2 = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA2));
 
                 File.WriteAllBytes(modifiedBigTextName, modifiedBigTextData);
                 File.WriteAllBytes(bigBinaryName2, bigBinaryData2);
@@ -242,31 +265,32 @@ namespace GitBifrostTests
                 // Check remote store for consistency
                 {
                     string[] files = Directory.GetFiles(CommonRemoteStore, "*.*", SearchOption.AllDirectories);
+                    SanitizePaths(files);
 
                     AreEqual("Internal store file count", 5, files.Length);
 
                     // Small binary
-                    string smallBinaryCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(smallBinarySHA));
+                    string smallBinaryCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(smallBinarySHA));
                     IsTrue(string.Format("Internal store contains {0}", smallBinaryLocalStorePath), files.Contains(smallBinaryCommonStorePath));
                     CheckFileConsistency(smallBinaryName, smallBinaryLocalStorePath, smallBinarySHA, smallBinaryData);
 
                     // Big binary
-                    string bigBinaryCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA));
+                    string bigBinaryCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA));
                     IsTrue(string.Format("Internal store contains {0}", bigBinaryLocalStorePath), files.Contains(bigBinaryCommonStorePath));
                     CheckFileConsistency(bigBinaryName, bigBinaryLocalStorePath, bigBinarySHA, bigBinaryData);
 
                     // Big text
-                    string bigTextCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(bigTextSHA));
+                    string bigTextCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(bigTextSHA));
                     IsTrue(string.Format("Internal store contains {0}", bigTextLocalStorePath), files.Contains(bigTextCommonStorePath));
                     CheckFileConsistency(bigTextName, bigTextLocalStorePath, bigTextSHA, bigTextData);
 
                     // Big text modified
-                    string modifiedBigTextCommonStorePath = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(modifiedBigTextSHA));
+                    string modifiedBigTextCommonStorePath = PathCombine(CommonRemoteStore, GetStorePathFromSHA(modifiedBigTextSHA));
                     IsTrue(string.Format("Internal store contains {0}", modifiedBigTextCommonStorePath), files.Contains(modifiedBigTextCommonStorePath));
                     CheckFileConsistency(modifiedBigTextName, modifiedBigTextLocalStorePath, modifiedBigTextSHA, modifiedBigTextData);
 
                     // Big binary2
-                    string bigBinaryCommonStorePath2 = Path.Combine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA2));
+                    string bigBinaryCommonStorePath2 = PathCombine(CommonRemoteStore, GetStorePathFromSHA(bigBinarySHA2));
                     IsTrue(string.Format("Internal store contains {0}", bigBinaryLocalStorePath2), files.Contains(bigBinaryCommonStorePath2));
                     CheckFileConsistency(bigBinaryName2, bigBinaryLocalStorePath2, bigBinarySHA2, bigBinaryData2);
                 }
@@ -289,7 +313,6 @@ namespace GitBifrostTests
         {
             if (!(value == 0))
             {
-
                 throw new Exception(string.Format("'{0}' failed, value is not 0.", test_name));
             }
             TestPassedMsg(test_name);
@@ -370,19 +393,22 @@ namespace GitBifrostTests
 
         static void WriteBifrostConfig()
         {
-            File.WriteAllText(".gitbifrost", string.Format(@"
-[repo]
-    text-size-threshold = 5242880
-    bin-size-threshold = 102400
-[store ""luminawesome.mac""]
-    remote = {0}
-    url = {1}
-    primary = true", CommonRemotePath, CommonRemoteStore));
+            File.WriteAllText(".gitbifrost", string.Format(
+                @"[repo]
+                    text-size-threshold = 5242880
+                    bin-size-threshold = 102400
+                [store ""luminawesome.mac""]
+                    remote = {0}
+                    url = {1}
+                    primary = true",
+                CommonRemotePath.Replace("\\","\\\\"), 
+                CommonRemoteStore.Replace("\\", "\\\\"))
+            );
         }
 
         static string GetStorePathFromSHA(string sha)
         {
-            return Path.Combine(string.Format("{0}/{1}/{2}", sha[0], sha[1], sha[2]), sha + ".bin");
+            return PathCombine(string.Format("{0}/{1}/{2}", sha[0], sha[1], sha[2]), sha + ".bin");
         }
 
         static string SHA1FromBytes(byte[] bytes)
@@ -405,34 +431,6 @@ namespace GitBifrostTests
             }
         }
 
-        static Tuple<string, byte[]>[] GenerateTestData(uint fileCount, string fileName, string extention, int minSize, int maxSize, int maxDirDepth)
-        {
-            Random rand = new Random();
-
-            Tuple<string, byte[]>[] output = new Tuple<string, byte[]>[fileCount];
-
-            for (int i = 0; i < fileCount; ++i)
-            {
-                int size = rand.Next(minSize, maxSize);
-                int depth = rand.Next(1, maxDirDepth);
-
-                string path = "";
-                for (int d = 0; d < depth; ++d)
-                {
-                    path = Path.Combine(path, Path.GetDirectoryName(Path.GetRandomFileName()));
-                }
-                path = Path.Combine(path, string.Format("{0}_{1}.{2}", fileName, i, extention));
-
-
-                byte[] data = new byte[size];
-                rand.NextBytes(data);
-
-                output[i] = new Tuple<string, byte[]>(path, data);
-            }
-
-            return output;
-        }
-
         static int StartProcessWaitForExitCode(string fileName, string arguments, string workingDir = null)
         {
             int exitCode = -1;
@@ -444,7 +442,8 @@ namespace GitBifrostTests
 
             using (Process proc = Process.Start(new ProcessStartInfo(fileName, arguments)
                 {
-                    WorkingDirectory = workingDir 
+                    WorkingDirectory = workingDir,
+                    UseShellExecute = false
                 }))
             {
                 proc.WaitForExit();

@@ -834,8 +834,20 @@ namespace GitBifrost
                 return Failed;
             }
 
-            if (!GitConfigSet("filter.bifrost.clean", "git-bifrost filter-clean %f") ||
-                !GitConfigSet("filter.bifrost.smudge", "git-bifrost filter-smudge %f") ||
+#if !(__MonoCS__)
+            string filter_clean = "git-bifrost.exe filter-clean %f";
+            string filter_smudge = "git-bifrost.exe filter-smudge %f";
+            string hook_precommit = "git-bifrost.exe hook-pre-commit \"$@\"";
+            string hook_prepush = "git-bifrost.exe hook-push \"$@\"";
+#else
+            string filter_clean = "git-bifrost filter-clean %f";
+            string filter_smudge = "git-bifrost filter-smudge %f";
+            string hook_precommit = "git-bifrost hook-pre-commit \"$@\"";
+            string hook_prepush = "git-bifrost hook-push \"$@\"";
+#endif
+
+            if (!GitConfigSet("filter.bifrost.clean", filter_clean) ||
+                !GitConfigSet("filter.bifrost.smudge", filter_smudge) ||
                 !GitConfigSet("filter.bifrost.required", "true"))
             {
                 return Failed;
@@ -843,10 +855,8 @@ namespace GitBifrost
 
             try
             {
-                File.WriteAllText(".git/hooks/pre-commit", "#!/bin/bash\ngit-bifrost hook-pre-commit");
-                File.WriteAllText(".git/hooks/pre-push", "#!/bin/bash\ngit-bifrost hook-push \"$@\"");
-                //File.WriteAllText(".git/hooks/post-checkout", "#!/bin/bash\ngit-bifrost hook-sync \"$@\"");
-
+                File.WriteAllLines(".git/hooks/pre-commit", new string[] { "#!/bin/bash", hook_precommit });
+                File.WriteAllLines(".git/hooks/pre-push", new string[] { "#!/bin/bash", hook_prepush });                
 #if __MonoCS__
                 Syscall.chmod(".git/hooks/pre-commit", FilePermissions.ACCESSPERMS);
                 Syscall.chmod(".git/hooks/pre-push", FilePermissions.ACCESSPERMS);
