@@ -21,6 +21,7 @@ namespace GitBifrostTests
 #if !(__MonoCS__)            
             return path.Replace('/', '\\');
 #endif
+            return path;
         }
 
         public static void SanitizePaths(string[] paths)
