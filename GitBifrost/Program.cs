@@ -939,8 +939,14 @@ namespace GitBifrost
                 stores.Add(local);
             }
 
+            List<string> data_stores_text = new List<string>();
 
-            string[] data_stores_text = GitConfigGetRegex(@"^store\..*", ".gitbifrost");
+            data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitbifrost"));
+
+            if (File.Exists(".gitbifrostuser"))
+            {
+                data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitbifrostuser"));
+            }
 
             foreach (string store_text in data_stores_text)
             {
