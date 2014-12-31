@@ -54,25 +54,19 @@ Each `[store]` section should have a unique name `[store "store-name"]` which ad
 
 Currently stores can be accessed from `file://`, `ftp://`, `ftps://`
 
-##### Configuring .gitbifrostuser [incomplete] #####
+##### Configuring .gitbifrostuser #####
 User specific override file which should be included in `.gitignore`. This file is intended to specify usernames and passwords for git-bifrost stores.
 
-For example `.gitbifrost` may contain `[store "remote_ftp"]` with a username and password for read-only access. With `.gitbifrostuser`, users may override the username and password with their credentials which enable read/write.
+For example `.gitbifrost` may contain `[store "remote_ftp"]` with a username and password for read-only access. With `.gitbifrostuser`, users may override the username and password with their own credentials which enable read/write.
+
+    [store "my-git-store"]
+        username = write_access_user
+        password = pass
 
 ### Cloning Repository ###
 Bifrost needs to install some hooks and filters before you do your first checkout so `git bifrost clone` will clone the repo with --no-checkout, install the hooks and then do the checkout.
 
     git bifrost clone <repository> <directory>
-
-### Known Issues ###
-
-### TODO ###
-- Sftp support
-- Trim internal store after a pushing to a primary store
-- If you download a git archive from github, you'll only have the proxy files instead of the actual binary data. Add support for sucking down data from proxy files only without a git repo.
-- If you do a normal `git clone` rather than a `git bifrost clone`, you're hooped and you'll have to start over. This kind of sucks
-- Add support for compressing data before uploading to store
-
 
 ### Common .gitattributes ###
 
@@ -105,3 +99,12 @@ Bifrost needs to install some hooks and filters before you do your first checkou
 
 	# Unity
 	*.unity filter=bifrost"
+    
+### Known Issues ###
+
+### TODO ###
+- Sftp support
+- Trim internal store after a pushing to a primary store
+- If you download a git archive from github, you'll only have the proxy files instead of the actual binary data. Add support for sucking down data from proxy files only without a git repo.
+- If you do a normal `git clone` rather than a `git bifrost clone`, you're hooped and you'll have to start over. This kind of sucks
+- Add support for compressing data before uploading to store
