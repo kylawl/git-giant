@@ -15,8 +15,6 @@ using Mono.Unix.Native;
 
 namespace GitBifrost
 {
-    class StoreData : Dictionary<string, string> { }
-    class StoreContainer : Dictionary<string, StoreData> { }
     delegate int CommandDelegate(string[] args);
 
     enum LogNoiseLevel
@@ -28,23 +26,19 @@ namespace GitBifrost
 
     class Program
     {
-        const int Kilobytes = 1024;
-        const int Megabytes = 1024 * 1024;
-        const int Version = 1;
-        const int StartingBufferSize = 1024 * 1024;
+        const int BifrostVersion = 1;
+        const string BifrostProxySignature = "~*@git-bifrost@*~";
         const string LocalStoreLocation = "./.git/bifrost/data";
         const string GitEmptySha = "0000000000000000000000000000000000000000";
+        const int FirstFewBytes = 8000;
+        const string TextSizeThresholdKey = "repo.text-size-threshold";
+        const int DefaultTextSizeThreshold = 5 * Megabyte;
+        const string BinSizeThresholdKey = "repo.bin-size-threshold";
+        const int DefaultBinSizeThreshold = 100 * Kilobyte;
+        const int Kilobyte = 1024;
+        const int Megabyte = 1024 * 1024;
         const int Succeeded = 0;
         const int Failed = 1;
-        const int FirstFewBytes = 8000;
-
-        const string BifrostProxyId = "git-bifrost-proxy-file";
-        static readonly int BifrostProxyIdNumBytes = Encoding.UTF8.GetByteCount(BifrostProxyId);
-
-        const string TextSizeThresholdKey = "repo.text-size-threshold";
-        const int DefaultTextSizeThreshold = 5 * Megabytes;
-        const string BinSizeThresholdKey = "repo.bin-size-threshold";
-        const int DefaultBinSizeThreshold = 100 * Kilobytes;
 
         static readonly char[] NullChar = new char[] { '\0' };
 
@@ -58,8 +52,7 @@ namespace GitBifrost
 
             Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
-            Commands["hook-sync"] = CmdHookSync;
-            Commands["hook-push"] = CmdHookPush;
+            Commands["hook-pre-push"] = CmdHookPrePush;
             Commands["hook-pre-commit"] = CmdHookPreCommit;
             Commands["filter-clean"] = CmdFilterClean;
             Commands["filter-smudge"] = CmdFilterSmudge;
@@ -67,7 +60,7 @@ namespace GitBifrost
             Commands["clone"] = CmdClone;
             Commands["init"] = CmdInit;
 
-            string arg_command = args.Length > 0 ? args[0].ToLower() : null;
+            string arg_command = args.Length > 0 ? args[0].ToLower() : "help";
 
             if (arg_command != null)
             {
@@ -82,20 +75,11 @@ namespace GitBifrost
                 }
                 result = command(args);
             }
-            else
-            {
-                result = CmdHelp(args);
-            }
 
             return result;
         }
 
-        static int CmdHookSync(string[] args)
-        {
-            return Succeeded;
-        }
-
-        static int CmdHookPush(string[] args)
+        static int CmdHookPrePush(string[] args)
         {
             // This hook is called with the following parameters:
             //
@@ -112,7 +96,7 @@ namespace GitBifrost
             string arg_remote_name = args[1];
             string arg_remote_url = args[2];
 
-            char[] proxy_sig_buffer = new char[BifrostProxyId.Length];
+            char[] proxy_sig_buffer = new char[BifrostProxySignature.Length];
 
             //
             // Collect up all the file revisions we need to push to the stores
@@ -214,12 +198,12 @@ namespace GitBifrost
                                             // becasuse git errors out when we close STDOUT before reading it completly. We only need to read
                                             // the first handful of chars so, no point reading the whole file or worrying about the exit code.
                                             git_proc.StandardOutput.Dispose();
-                                            git_proc.WaitForExit();
-                                            git_proc.Dispose();
+                                            git_proc.WaitForExitCode(true);
+
 
                                             if (bytes_read == proxy_sig_buffer.Length)
                                             {
-                                                is_bifrost_proxy = new string(proxy_sig_buffer) == BifrostProxyId;
+                                                is_bifrost_proxy = new string(proxy_sig_buffer) == BifrostProxySignature;
                                             }
                                         }
 
@@ -318,6 +302,7 @@ namespace GitBifrost
                     // Read in the proxy for this revision of the file
                     Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
 
+                    string bifrost_sig = git_proc.StandardOutput.ReadLine();
                     string bifrost_ver = git_proc.StandardOutput.ReadLine();
                     string file_sha = git_proc.StandardOutput.ReadLine();
                     string file_size_str = git_proc.StandardOutput.ReadLine(); // File size (unused here)
@@ -328,7 +313,7 @@ namespace GitBifrost
                         return git_proc.ExitCode;
                     }
 
-                    if (!bifrost_ver.StartsWith(BifrostProxyId))
+                    if (bifrost_sig != BifrostProxySignature)
                     {
                         store_interface.CloseStore();
                         LogLine(LogNoiseLevel.Normal, "Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev);
@@ -425,13 +410,15 @@ namespace GitBifrost
                 staged_files = proc_output.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
             }
 
-            byte[] scratch_buffer = new byte[64 * Kilobytes];
+            byte[] scratch_buffer = new byte[64 * Kilobyte];
 
             bool succeeded = true;
             bool files_over_limit = false;
             bool files_need_restaging = false;
 
             int file_number = 0;
+
+            int proxyid_numbytes = Encoding.UTF8.GetByteCount(BifrostProxySignature);
 
             string progress_msg = "Bifrost: Validating staged files";
             foreach (string file in staged_files)
@@ -449,11 +436,11 @@ namespace GitBifrost
                         // a bifrost proxy file if it isn't the user needs to restage the file in order to allow the clean filter to run.
                         // This is likely to happen when you modify your git attributes to include a file in bifrost.
 
-                        int bytes_read = proc_stream.Read(scratch_buffer, 0, BifrostProxyIdNumBytes);
+                        int bytes_read = proc_stream.Read(scratch_buffer, 0, proxyid_numbytes);
 
                         string proxyfile_tag = Encoding.UTF8.GetString(scratch_buffer, 0, bytes_read);
 
-                        if (proxyfile_tag != BifrostProxyId)
+                        if (proxyfile_tag != BifrostProxySignature)
                         {
                             LogLine(LogNoiseLevel.Loud, "Bifrost: Needs restaging '{0}'.", file);
                             succeeded = false;
@@ -562,7 +549,7 @@ namespace GitBifrost
                 return Failed;
             }
 
-            MemoryStream file_stream = new MemoryStream(StartingBufferSize);
+            MemoryStream file_stream = new MemoryStream(Megabyte);
 
             using (Stream stdin = Console.OpenStandardInput())
             {
@@ -574,7 +561,7 @@ namespace GitBifrost
 
             {
                 StreamReader reader = new StreamReader(file_stream);
-                is_bifrost_proxy = reader.ReadLine().StartsWith(BifrostProxyId);
+                is_bifrost_proxy = reader.ReadLine().StartsWith(BifrostProxySignature);
 
                 file_stream.Position = 0;
             }
@@ -597,7 +584,8 @@ namespace GitBifrost
             // Give git the proxy instead of the actual file
             using (StreamWriter output_writer = new StreamWriter(Console.OpenStandardOutput()))
             {
-                output_writer.WriteLine("{0} {1}", BifrostProxyId, Version);
+                output_writer.WriteLine(BifrostProxySignature);
+                output_writer.WriteLine(BifrostVersion);
                 output_writer.WriteLine(file_hash);
                 output_writer.WriteLine(file_stream.Length);
             }
@@ -641,9 +629,10 @@ namespace GitBifrost
 
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
-                string bifrost_ver = input_reader.ReadLine(); // "git-bifrost-proxy-file <version number>"
+                string bifrost_sig = input_reader.ReadLine();
+                string bifrost_ver = input_reader.ReadLine();
 
-                if (!bifrost_ver.StartsWith(BifrostProxyId))
+                if (!bifrost_sig.StartsWith(BifrostProxySignature))
                 {
                     LogLine(LogNoiseLevel.Normal, "Bifrost: '{0}' is not a bifrost proxy file but is being smudged.", arg_filepath);
                     return Failed;
@@ -838,12 +827,12 @@ namespace GitBifrost
             string filter_clean = "git-bifrost.exe filter-clean %f";
             string filter_smudge = "git-bifrost.exe filter-smudge %f";
             string hook_precommit = "git-bifrost.exe hook-pre-commit \"$@\"";
-            string hook_prepush = "git-bifrost.exe hook-push \"$@\"";
+            string hook_prepush = "git-bifrost.exe hook-pre-push \"$@\"";
 #else
             string filter_clean = "git-bifrost filter-clean %f";
             string filter_smudge = "git-bifrost filter-smudge %f";
             string hook_precommit = "git-bifrost hook-pre-commit \"$@\"";
-            string hook_prepush = "git-bifrost hook-push \"$@\"";
+            string hook_prepush = "git-bifrost hook-pre-push \"$@\"";
 #endif
 
             if (!GitConfigSet("filter.bifrost.clean", filter_clean) ||
@@ -877,11 +866,7 @@ namespace GitBifrost
         {
             if ((int)NoiseLevel >= (int)Level)
             {
-                try
-                {
-                    Console.Error.Write(format, arg);
-                }
-                catch { }
+                Console.Error.Write(format, arg);
             }
         }
 
@@ -889,14 +874,7 @@ namespace GitBifrost
         {
             if ((int)NoiseLevel >= (int)Level)
             {
-                try
-                {
-                    Console.Error.WriteLine(format, arg);
-                }
-                catch
-                {
-
-                }
+                Console.Error.WriteLine(format, arg);
             }
         }
 
