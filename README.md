@@ -97,13 +97,13 @@ Bifrost needs to install some hooks and filters before you do your first checkou
 	*.umap   filter=bifrost
 
 	# Unity
-	*.unity filter=bifrost"
+	*.unity filter=bifrost
 
 ### Known Issues ###
 
 ### TODO ###
-- Sftp support
+- ssh (sftp) support
 - Trim internal store after a pushing to a primary store
 - If you download a git archive from github, you'll only have the proxy files instead of the actual binary data. Add support for sucking down data from proxy files only without a git repo.
-- If you do a normal `git clone` rather than a `git bifrost clone`, you're hooped and you'll have to start over. This kind of sucks
-- Add support for compressing data before uploading to store
+- If you perform `git clone` rather than a `git bifrost clone`, you're hooped and you'll have to start over. This kind of sucks.
+- Add support for optionally compressing files before uploading to store
