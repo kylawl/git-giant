@@ -20,8 +20,9 @@ namespace GitBifrostTests
         {
 #if !(__MonoCS__)            
             return path.Replace('/', '\\');
-#endif
+#else
             return path;
+#endif
         }
 
         public static void SanitizePaths(string[] paths)
@@ -45,7 +46,14 @@ namespace GitBifrostTests
 
             if (Directory.Exists("bifrost_test_products"))
             {
-                Directory.Delete("bifrost_test_products", true);
+                var directory = new DirectoryInfo("bifrost_test_products") { Attributes = FileAttributes.Normal };
+
+                foreach (var info in directory.GetFileSystemInfos("*", SearchOption.AllDirectories))
+                {
+                    info.Attributes = FileAttributes.Normal;
+                }
+
+                directory.Delete(true);
             }
 
             Directory.CreateDirectory("bifrost_test_products");
