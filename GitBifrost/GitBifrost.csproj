@@ -23,7 +23,6 @@
     <CustomCommands>
       <CustomCommands>
         <Command type="BeforeExecute" workingdir="~/dev" />
-        <Command type="AfterBuild" command="mono ${SolutionDir}/GitBifrostTests/bin/Debug/GitBifrostTests.exe" workingdir="${SolutionDir}" externalConsole="True" />
       </CustomCommands>
     </CustomCommands>
     <Commandlineparameters>hook-push</Commandlineparameters>
@@ -46,6 +45,9 @@
     <Reference Include="System.Net.FtpClient">
       <HintPath>..\packages\System.Net.FtpClient.1.0.5281.14359\lib\net40\System.Net.FtpClient.dll</HintPath>
     </Reference>
+    <Reference Include="Renci.SshNet">
+      <HintPath>..\packages\SSH.NET.2013.4.7\lib\net40\Renci.SshNet.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs">
@@ -55,6 +57,7 @@
     <Compile Include="StoreFileSystem.cs" />
     <Compile Include="StoreFtp.cs" />
     <Compile Include="IStoreInterface.cs" />
+    <Compile Include="StoreSftp.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
