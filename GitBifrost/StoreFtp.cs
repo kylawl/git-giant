@@ -62,6 +62,7 @@ namespace GitBifrost
         public void CloseStore()
         {
             Client.Disconnect();
+            Client.Dispose();
             Client = null;
         }
             

@@ -71,7 +71,7 @@ namespace GitBifrost
 
         public byte[] PullFile(Uri uri, string filename)
         {
-            string input_filepath = Path.Combine(uri.LocalPath, filename);
+            string input_filepath = Path.Combine(uri.AbsolutePath, filename);
 
             if (File.Exists(input_filepath))
             {

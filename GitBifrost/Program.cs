@@ -24,6 +24,23 @@ namespace GitBifrost
         Debug = 2
     }
 
+    class BifrostPoxy
+    {
+        public string FileRev;
+        public string Version;
+        public string SHA1;
+        public long FileSize;
+
+        public BifrostPoxy(string fileRev, string version, string sha1, long fileSize)
+        {
+            FileRev = fileRev;
+            Version = version;
+            SHA1 = sha1;
+            FileSize = fileSize;
+        }
+
+    }
+
     class Program
     {
         const int BifrostVersion = 1;
@@ -38,7 +55,7 @@ namespace GitBifrost
         const int Kilobyte = 1024;
         const int Megabyte = 1024 * 1024;
         const int Succeeded = 0;
-        const int Failed = 1;
+        const int Failed = -1;
 
         static readonly char[] NullChar = new char[] { '\0' };
 
@@ -56,6 +73,7 @@ namespace GitBifrost
             Commands["hook-pre-commit"] = CmdHookPreCommit;
             Commands["filter-clean"] = CmdFilterClean;
             Commands["filter-smudge"] = CmdFilterSmudge;
+            Commands["verify"] = CmdVerify;
             Commands["help"] = CmdHelp;
             Commands["clone"] = CmdClone;
             Commands["init"] = CmdInit;
@@ -102,7 +120,7 @@ namespace GitBifrost
             // Collect up all the file revisions we need to push to the stores
             //
 
-            var file_revs = new List<string>();
+            var proxy_revs = new List<BifrostPoxy>();
 
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
@@ -155,19 +173,7 @@ namespace GitBifrost
                         {
                             Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index++, rev_ids.Count, "\r"));
 
-                            // Get files modified in this revision
-                            // format: file_status<null>file_name<null>file_status<null>file_name<null>
-                            string[] revision_files;
-                            {
-                                Process git_proc = StartGit("diff-tree --no-commit-id --name-status --root -r -z", revision);
-                                string proc_data = git_proc.StandardOutput.ReadToEnd();
-                                if (git_proc.WaitForExitFail(true))
-                                {
-                                    return git_proc.ExitCode;
-                                }
-
-                                revision_files = proc_data.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
-                            }
+                            string[] revision_files = GetFilesAndStatusInRevision(revision);
                                 
                             LogLine(LogNoiseLevel.Debug, "Bifrost: Revision {0}, {1} file(s)", revision, revision_files.Length);
 
@@ -185,38 +191,13 @@ namespace GitBifrost
                                 // Skip files that have been deleted
                                 if (status != "D")
                                 {
-                                    try
+                                    string file_rev = string.Format("{0}:{1}", revision, file);
+                                    BifrostPoxy proxy = GetProxyData(file_rev);
+
+                                    if (proxy != null)
                                     {
-                                        string file_rev = string.Format("{0}:{1}", revision, file);
-                                        bool is_bifrost_proxy = false;
-                                        {
-                                            Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
-
-                                            int bytes_read = git_proc.StandardOutput.Read(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
-
-                                            // Trash the output stream after we've read our bytes. Don't bother checking the error code 
-                                            // becasuse git errors out when we close STDOUT before reading it completly. We only need to read
-                                            // the first handful of chars so, no point reading the whole file or worrying about the exit code.
-                                            git_proc.StandardOutput.Dispose();
-                                            git_proc.WaitForExitCode(true);
-
-
-                                            if (bytes_read == proxy_sig_buffer.Length)
-                                            {
-                                                is_bifrost_proxy = new string(proxy_sig_buffer) == BifrostProxySignature;
-                                            }
-                                        }
-
-                                        if (is_bifrost_proxy)
-                                        {
-                                            LogLine(LogNoiseLevel.Debug, "Bifrost: Will push '{0}'", file);
-                                            file_revs.Add(file_rev);
-                                        }
-                                    }
-                                    catch
-                                    {
-                                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to get file from diff-tree.");
-                                        return Failed;
+                                        LogLine(LogNoiseLevel.Debug, "Bifrost: Will push '{0}'", file);
+                                        proxy_revs.Add(proxy);
                                     }
                                 }
                             }
@@ -232,17 +213,17 @@ namespace GitBifrost
                 }
             }
 
-            if (file_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
+            if (proxy_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
                 LogLine(LogNoiseLevel.Normal, "Bifrost: Local store directory is missing but should contain files.");
-                foreach (var file_rev in file_revs)
+                foreach (var file_rev in proxy_revs)
                 {
-                    LogLine(LogNoiseLevel.Normal, file_rev);
+                    LogLine(LogNoiseLevel.Normal, file_rev.FileRev);
                 }
                 return Failed;
             }
 
-            if (file_revs.Count == 0)
+            if (proxy_revs.Count == 0)
             {
                 LogLine(LogNoiseLevel.Normal, "Bifrost: No files to push.");
                 return Succeeded;
@@ -294,34 +275,13 @@ namespace GitBifrost
                 string progress_msg = string.Format("Bifrost: Updating store '{0}'", store_uri.AbsoluteUri);
 
                 int file_index = 0;
-                foreach (var file_rev in file_revs)
+                foreach (var proxy_rev in proxy_revs)
                 {
-                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count, "\r"));
+                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, proxy_revs.Count, "\r"));
                     ++file_index;
 
-                    // Read in the proxy for this revision of the file
-                    Process git_proc = StartGit(string.Format("show \"{0}\"", file_rev));
-
-                    string bifrost_sig = git_proc.StandardOutput.ReadLine();
-                    string bifrost_ver = git_proc.StandardOutput.ReadLine();
-                    string file_sha = git_proc.StandardOutput.ReadLine();
-                    string file_size_str = git_proc.StandardOutput.ReadLine(); // File size (unused here)
-
-                    if (git_proc.WaitForExitFail(true))
-                    {
-                        store_interface.CloseStore();
-                        return git_proc.ExitCode;
-                    }
-
-                    if (bifrost_sig != BifrostProxySignature)
-                    {
-                        store_interface.CloseStore();
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Expected '{0}' to be a bifrost proxy file but got something else.", file_rev);
-                        return Failed;
-                    }
-
                     // Build the mangled name
-                    string filename = GetFilePath(file_sha);
+                    string filename = GetFilePathFromSHA(proxy_rev.SHA1);
                     string filepath = Path.Combine(LocalStoreLocation, filename);
 
                     SyncResult result = SyncResult.Failed;
@@ -332,7 +292,7 @@ namespace GitBifrost
                     }
                     else
                     {
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to find revision '{0}' in local store.", file_rev);
+                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to find revision '{0}' in local store.", proxy_rev);
                     }
 
                     if (result == SyncResult.Failed)
@@ -358,7 +318,7 @@ namespace GitBifrost
 
                 store_interface.CloseStore();
 
-                LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, file_revs.Count, ", done."));
+                LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, proxy_revs.Count, ", done."));
 
                 if (IsPrimaryStore(store_data))
                 {
@@ -427,7 +387,7 @@ namespace GitBifrost
 
                 Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_number++, staged_files.Length, "\r"));
 
-                using (Process git_proc = StartGit(string.Format("show :\"{0}\"", file)))
+                using (Process git_proc = StartGit(string.Format("cat-file blob :\"{0}\"", file)))
                 {
                     Stream proc_stream = git_proc.StandardOutput.BaseStream;
                     if (bifrost_filtered)
@@ -597,7 +557,7 @@ namespace GitBifrost
 
 
             // Dump the real file into the local store
-            string output_filename = GetFilePath(file_hash);
+            string output_filename = GetFilePathFromSHA(file_hash);
 
 
             WriteToLocalStore(file_stream, output_filename);
@@ -630,7 +590,6 @@ namespace GitBifrost
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
                 string bifrost_sig = input_reader.ReadLine();
-                string bifrost_ver = input_reader.ReadLine();
 
                 if (!bifrost_sig.StartsWith(BifrostProxySignature))
                 {
@@ -638,11 +597,12 @@ namespace GitBifrost
                     return Failed;
                 }
 
+                string bifrost_ver = input_reader.ReadLine();
                 expected_file_hash = input_reader.ReadLine();
                 expected_file_size = int.Parse(input_reader.ReadLine());
             }
 
-            string input_filename = GetFilePath(expected_file_hash);
+            string input_filename = GetFilePathFromSHA(expected_file_hash);
 
 
             bool succeeded = false;
@@ -678,10 +638,8 @@ namespace GitBifrost
                         {
                             int loaded_file_size = file_contents.Length;
 
-                            byte[] loaded_file_hash_bytes = SHA1.Create().ComputeHash(file_contents, 0, loaded_file_size);
-                            string loaded_file_hash = BitConverter.ToString(loaded_file_hash_bytes).Replace("-", "");
-
-
+                            string loaded_file_hash = SHA1FromBytes(file_contents);
+                            
                             LogLine(LogNoiseLevel.Loud, "    Repo File: {0}", arg_filepath);
                             LogLine(LogNoiseLevel.Loud, "   Store Name: {0}", input_filename);
                             LogLine(LogNoiseLevel.Loud, "  Expect Hash: {0}", expected_file_hash);
@@ -778,13 +736,160 @@ namespace GitBifrost
             }
         }
 
+        static int CmdVerify(string[] args)
+        {
+            string arg_username = GetArgValue(args, "--username");
+            string arg_password = GetArgValue(args, "--password");
+            bool arg_verbose = GetArgSet(args, "--verbose");
+            string arg_store = args[args.Length - 1];
+
+            Uri store_uri;
+            if (!Uri.TryCreate(arg_store, UriKind.Absolute, out store_uri))
+            {
+                LogLine(LogNoiseLevel.Normal, "Bifrost: Invalid store uri '{0}'", arg_store);
+                return Failed;
+            }
+
+            IStoreInterface store_interface;
+            var store_interfaces = GetStoreInterfaces();
+            if (!store_interfaces.TryGetValue(store_uri.Scheme, out store_interface))
+            {
+                LogLine(LogNoiseLevel.Normal, "Bifrost: Unsupported protocol in uri '{0}'", store_uri.AbsoluteUri);
+                return Failed;
+            }
+
+            var store_data = new Dictionary<string, string>();
+            store_data["url"] = store_uri.AbsoluteUri;
+            store_data["username"] = arg_username;
+            store_data["password"] = arg_password;
+
+            int bad_files = 0;
+
+            if (store_interface.OpenStore(store_uri, store_data))
+            {
+                // Get all reachable revisions
+
+                List<string> revision_list = new List<string>(1000);
+
+                using (Process git_proc = StartGit("rev-list --all"))
+                {
+                    string line;
+                    while ((line = git_proc.StandardOutput.ReadLine()) != null)
+                    {
+                        revision_list.Add(line);
+                    }
+
+                    git_proc.WaitForExit();
+                }
+
+                foreach (string revision in revision_list)
+                {
+                    string[] revision_files = GetFilesAndStatusInRevision(revision);
+
+                    for (int i = 0; i < revision_files.Length; i+=2)
+                    {
+                        string status = revision_files[i];
+                        string file = revision_files[i+1];
+
+                        string file_rev = string.Format("{0}:{1}", revision, file);
+
+                        if (status == "X")
+                        {
+                            LogLine(LogNoiseLevel.Normal, "Bifrost: According to git something has gone wrong with file '{0}'. This is probably a bug in git and should be reported.", file_rev);
+                            return Failed;
+                        }
+
+                        // Skip files that have been deleted
+                        if (status != "D")
+                        {
+                            BifrostPoxy proxy = GetProxyData(file_rev);
+
+                            if (proxy == null) continue;
+
+                            string store_file = GetFilePathFromSHA(proxy.SHA1);
+
+                            byte[] file_bytes = store_interface.PullFile(store_uri, store_file);
+
+                            bool file_missing = file_bytes == null;
+                            bool wrong_size = false;
+                            bool bad_sha = false;
+
+                            string file_sha = GitEmptySha;
+
+                            if (!file_missing)
+                            {
+                                wrong_size = file_bytes.Length != proxy.FileSize;
+
+                                file_sha = SHA1FromBytes(file_bytes);
+                                bad_sha = file_sha != proxy.SHA1;
+                            }
+
+                            bool bad_things = file_missing | bad_sha | wrong_size;
+
+                            if (bad_things)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Red;
+                            }
+
+                            if (arg_verbose | bad_things)
+                            {
+                                Log(LogNoiseLevel.Normal, file_rev);
+                            }
+
+                            if (bad_things)
+                            {
+                                ++bad_files;
+
+                                if (file_missing)
+                                {
+                                    Log(LogNoiseLevel.Normal, " - Missing");
+                                }
+
+                                if (wrong_size)
+                                {
+                                    Log(LogNoiseLevel.Normal, " - Wrong Size: Got '{0}' Expected '{1}'", file_bytes.Length, proxy.FileSize);
+                                }
+
+                                if (bad_sha)
+                                {
+                                    Log(LogNoiseLevel.Normal, " - Bad SHA: Got '{0}' Expected '{1}'", file_sha, proxy.SHA1);
+                                }
+
+                                Console.ResetColor();
+                            }
+                            else if (arg_verbose)
+                            {
+                                Log(LogNoiseLevel.Normal, " - OK!");
+                            }
+
+                            if (arg_verbose | bad_things)
+                            {
+                                LogLine(LogNoiseLevel.Normal, "");
+                            }
+                        }
+                    }
+                }
+
+                store_interface.CloseStore();
+            }
+            else
+            {
+                LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to open store '{0}'", store_uri.AbsoluteUri);
+                return Failed;
+            }
+
+            return bad_files;
+
+        }
+
         static int CmdHelp(string[] args)
         {
-            LogLine(LogNoiseLevel.Normal, "usage: git-bifrost <command> [options]");
+            LogLine(LogNoiseLevel.Normal, "usage: git-bifrost <command> [<args>]");
             LogLine(LogNoiseLevel.Normal, "");
             LogLine(LogNoiseLevel.Normal, "Commands:");
+            LogLine(LogNoiseLevel.Normal, "   clone       Like a normal git-clone but installs git-bifrost prior to checkout.");
             LogLine(LogNoiseLevel.Normal, "   init        Installs bifrost into the specified git repository.");
-            LogLine(LogNoiseLevel.Normal, "   clone       like a normal git-clone but installs git-bifrost prior to checkout.");
+            LogLine(LogNoiseLevel.Normal, "   verify      Verifies that all indexed, bifrost managed files reachable in a store and are intact.");
 
             return Succeeded;
         }
@@ -862,23 +967,6 @@ namespace GitBifrost
             return Succeeded;
         }
 
-        public static void Log(LogNoiseLevel Level, string format, params object[] arg)
-        {
-            if ((int)NoiseLevel >= (int)Level)
-            {
-                Console.Error.Write(format, arg);
-            }
-        }
-
-        public static void LogLine(LogNoiseLevel Level, string format, params object[] arg)
-        {
-            if ((int)NoiseLevel >= (int)Level)
-            {
-                Console.Error.WriteLine(format, arg);
-            }
-        }
-
-
         static string GetProgressString(string message, int num, int total, string suffix = null)
         {
             int percent_complete = (int)((((float)num) / total) * 100);
@@ -886,12 +974,71 @@ namespace GitBifrost
                 message, percent_complete, num, total, suffix == null ? "" : suffix);
         }
 
-
-        static string GetFilePath(string file_hash)
+        static string GetFilePathFromSHA(string file_hash)
         {
             // Use the first 3 hex characters as the directory names which is 4096 directories
             return String.Format("{0}/{1}/{2}/{3}.bin", file_hash[0], file_hash[1], file_hash[2], file_hash);
         }
+            
+        static string[] GetFilesAndStatusInRevision(string revision)
+        {
+            string[] revision_files;
+
+            // Get files modified in this revision
+            // format: file_status<null>file_name<null>file_status<null>file_name<null>
+            using (Process git_proc = StartGit("diff-tree --no-commit-id --name-status --root -r -z", revision))
+            {
+                string proc_data = git_proc.StandardOutput.ReadToEnd();
+                revision_files = proc_data.Split(NullChar, StringSplitOptions.RemoveEmptyEntries);
+
+                git_proc.WaitForExit();
+            }
+
+            return revision_files;
+        }
+
+        static string SHA1FromBytes(byte[] bytes)
+        {
+            return BitConverter.ToString(SHA1Managed.Create().ComputeHash(bytes)).Replace("-", "");
+        }
+
+        static BifrostPoxy GetProxyData(string file_rev)
+        {
+            BifrostPoxy proxy = null;
+
+            using (Process git_proc = StartGit(string.Format("cat-file blob \"{0}\"", file_rev)))
+            {
+                StreamReader proc_out = git_proc.StandardOutput;
+
+                char[] proxy_sig_buffer = new char[BifrostProxySignature.Length];
+
+                int bytes_read = proc_out.Read(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
+
+                if (bytes_read == proxy_sig_buffer.Length && new string(proxy_sig_buffer) == BifrostProxySignature)
+                {
+                    proc_out.ReadLine(); // Read remaining line ending
+
+                    proxy = new BifrostPoxy(
+                        file_rev,
+                        proc_out.ReadLine(), // Version
+                        proc_out.ReadLine(), // SHA1
+                        long.Parse(proc_out.ReadLine()) // File Size
+                    );
+                }
+                else
+                {
+                    // Trash the output stream after we've read our bytes. Don't bother checking the error code 
+                    // becasuse git errors out when we close STDOUT before reading it completly. We only need to read
+                    // the first handful of chars so, no point reading the whole file or worrying about the exit code.
+                    git_proc.StandardOutput.Dispose();
+                }
+
+                git_proc.WaitForExit();
+            }
+
+            return proxy;
+        }
+        
 
         static Dictionary<string, IStoreInterface> GetStoreInterfaces()
         {
@@ -950,6 +1097,34 @@ namespace GitBifrost
             }
 
             return stores;
+        }
+
+        static string GetArgValue(string[] args, string arg_key, string default_value = "")
+        {
+            char[] eq = new char[]{ '=' };
+
+            foreach (string arg in args)
+            {
+                if (arg.StartsWith(arg_key))
+                {
+                    string[] tokens = arg.Split(eq, 2);
+                    if (tokens.Length == 2)
+                    {
+                        return tokens[1];
+                    }
+                    else
+                    {
+                        return default_value;
+                    }
+                }
+            }
+
+            return default_value;
+        }
+
+        static bool GetArgSet(string[] args,  string flag)
+        {
+            return args.Contains(flag);
         }
 
         // Returns true if set succeeded
@@ -1059,6 +1234,22 @@ namespace GitBifrost
 
             LogLine(LogNoiseLevel.Normal, "Failed to start git.");
             return null;
+        }
+
+        public static void Log(LogNoiseLevel Level, string format, params object[] arg)
+        {
+            if ((int)NoiseLevel >= (int)Level)
+            {
+                Console.Error.Write(format, arg);
+            }
+        }
+
+        public static void LogLine(LogNoiseLevel Level, string format, params object[] arg)
+        {
+            if ((int)NoiseLevel >= (int)Level)
+            {
+                Console.Error.WriteLine(format, arg);
+            }
         }
     }
 
