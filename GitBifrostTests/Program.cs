@@ -318,40 +318,96 @@ namespace GitBifrostTests
         }
             
         // Testers
-        static void IsZero(string test_name, int value)
+        static bool IsZero(string test_name, int value)
         {
             if (!(value == 0))
             {
-                throw new Exception(string.Format("'{0}' failed, value is not 0.", test_name));
+                TestFailMsg(test_name, string.Format("Value is not 0. ({0})", value));
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
             }
             TestPassedMsg(test_name);
+            return true;
         }
 
-        static void NotZero(string test_name, int value)
+        static bool NotZero(string test_name, int value)
         {
             if (!(value != 0))
             {
-                throw new Exception(string.Format("'{0}' failed, value is 0", test_name));
+                TestFailMsg(test_name, "Value is 0.");
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
             }
+
             TestPassedMsg(test_name);
+            return true;
         }
 
-        static void AreEqual<T>(string test_name, T a, T b)
+        static bool AreEqual<T>(string test_name, T a, T b)
         {
             if (!a.Equals(b))
             {
-                throw new Exception(string.Format("'{0}' failed, values are not equal ({1} != {2})", test_name, a, b));
+                TestFailMsg(test_name, string.Format("Values are not equal ({1} != {2}).", a, b));
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
             }
             TestPassedMsg(test_name);
+            return true;
         }
 
-        static void AreNotEqual<T>(string test_name, T a, T b)
+        static bool AreNotEqual<T>(string test_name, T a, T b)
         {
             if (a.Equals(b))
             {
-                throw new Exception(string.Format("'{0}' failed, values are equal ({1} == {2})", test_name, a, b));
+                TestFailMsg(test_name, string.Format("Values are equal ({1} == {2}).", a, b));
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
             }
             TestPassedMsg(test_name);
+            return true;
+        }
+
+        static bool IsFalse(string test_name, bool isFalse)
+        {
+            if (!isFalse)
+            {
+                TestFailMsg(test_name, "Value is true.");
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
+            }
+            TestPassedMsg(test_name);
+            return true;
+        }
+
+        static bool IsTrue(string test_name, bool isTrue)
+        {
+            if (!isTrue)
+            {
+                TestFailMsg(test_name, "Value is false.");
+                if (Debugger.IsAttached)
+                {
+                    Debugger.Break();
+                }
+                return false;
+            }
+
+            TestPassedMsg(test_name);
+            return true;
         }
 
         static bool ArraysEqual<T>(T[] a1, T[] a2)
@@ -373,22 +429,11 @@ namespace GitBifrostTests
             return true;
         }
 
-        static void IsFalse(string test_name, bool isFalse)
+        static void TestFailMsg(string test_name, string message)
         {
-            if (!isFalse)
-            {
-                throw new Exception(string.Format("'{0}' failed, value is true", test_name));
-            }
-            TestPassedMsg(test_name);
-        }
-
-        static void IsTrue(string test_name, bool isTrue)
-        {
-            if (!isTrue)
-            {
-                throw new Exception(string.Format("'{0}' failed, value is false", test_name));
-            }
-            TestPassedMsg(test_name);
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Error.WriteLine("Test: {0}... Failed - {1}", test_name, message);
+            Console.ResetColor();
         }
 
         static void TestPassedMsg(string test_name)
@@ -402,14 +447,15 @@ namespace GitBifrostTests
 
         static void WriteBifrostConfig()
         {
-            File.WriteAllText(".gitbifrost", string.Format(
-                @"[repo]
-                    text-size-threshold = 5242880
-                    bin-size-threshold = 102400
-                [store ""luminawesome.mac""]
-                    remote = {0}
-                    url = {1}
-                    primary = true",
+            File.WriteAllText(".gitbifrost", 
+                string.Format(
+@"[repo]
+    text-size-threshold = 5242880
+    bin-size-threshold = 102400
+[store ""luminawesome.mac""]
+    remote = {0}
+    url = {1}
+    primary = true",
                 CommonRemotePath.Replace("\\","\\\\"), 
                 CommonRemoteStore.Replace("\\", "\\\\"))
             );
