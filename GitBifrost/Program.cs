@@ -1047,6 +1047,7 @@ namespace GitBifrost
             store_interfaces[Uri.UriSchemeFile] = new StoreFileSystem();
             store_interfaces[Uri.UriSchemeFtp] = new StoreFtp();
             store_interfaces["ftps"] = new StoreFtp();
+            store_interfaces["sftp"] = new StoreSftp();
 
             return store_interfaces;
         }

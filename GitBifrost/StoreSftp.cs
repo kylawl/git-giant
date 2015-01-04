@@ -26,7 +26,7 @@ namespace GitBifrost
 
             if (uri.Scheme == "sftp")
             {
-                SftpClient sftp_client = new SftpClient(uri.Host, uri.Port, 
+                SftpClient sftp_client = new SftpClient(uri.Host, 22, 
                     store.GetValue("username", "anonymous"), 
                     store.GetValue("password", ""));
 
@@ -70,7 +70,15 @@ namespace GitBifrost
                     {
                         try
                         {
-                            Client.CreateDirectory(dir);
+                            string[] dirs = dir.Split(new char[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar}, StringSplitOptions.RemoveEmptyEntries); 
+
+                            foreach(string sub_dir in dirs)
+                            {
+                                Client.CreateDirectory(sub_dir);
+                                Client.ChangeDirectory(sub_dir);
+                            }
+
+                            Client.ChangeDirectory(store_location.AbsolutePath);
                         }
                         catch
                         {
@@ -85,10 +93,9 @@ namespace GitBifrost
                     Guid guid = Guid.NewGuid();
 
                     string store_filename_temp = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
-                    string store_filepath_temp = Path.Combine(dir, store_filename_temp);
+                    string store_filepath_temp = Path.Combine(store_location.AbsolutePath, dir, store_filename_temp);
 
-
-                    using (Stream output_stream = Client.OpenWrite(store_filepath_temp))
+                    using (Stream output_stream = Client.Create(store_filepath_temp))
                     {
                         using (Stream file_stream = File.OpenRead(source_file))
                         {
@@ -107,7 +114,6 @@ namespace GitBifrost
                         return SyncResult.SkippedLate;
                     }
                 }
-
             }
             catch
             {
