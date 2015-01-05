@@ -55,7 +55,7 @@ namespace GitBifrost
         const int Kilobyte = 1024;
         const int Megabyte = 1024 * 1024;
         const int Succeeded = 0;
-        const int Failed = -1;
+        const int Failed = 1;
 
         static readonly char[] NullChar = new char[] { '\0' };
 
@@ -969,7 +969,7 @@ namespace GitBifrost
 
         static string GetProgressString(string message, int num, int total, string suffix = null)
         {
-            int percent_complete = (int)((((float)num) / total) * 100);
+            int percent_complete = Math.Min(100, Math.Max(0, (int)((((float)num) / total) * 100)));
             return string.Format("{0}: {1}% ({2}/{3}){4}",
                 message, percent_complete, num, total, suffix == null ? "" : suffix);
         }
