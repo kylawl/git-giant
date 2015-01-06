@@ -51,7 +51,7 @@ The `[store]` sections are used to map git remote repositories to git-giant stor
 
 Each `[store]` section should have a unique name `[store "store-name"]` which adheres to the git-config format.
 
-Currently stores can be accessed from `file://`, `ftp://`, `ftps://`
+Currently stores can be accessed from `file://`, `ftp://`, `ftps://`, `sftp://`
 
 ##### Configuring .gitgiantuser #####
 User specific override file which should be included in `.gitignore`. This file is intended to specify usernames and passwords for git-giant stores.
