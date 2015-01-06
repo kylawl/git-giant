@@ -1,13 +1,13 @@
 git-giant
 ==========
 
-Built for game developers who are used to the world of versioned game data, git-giant... (insert pun about big binary game data and a beanstalk).
+Built for game developers who are used to the world of versioned game data, git-giant will transparently handle your large data separatly from the rest of your git repository. You should never need to directly invoke git-giant after your initial init/clone.
 
 ## Goals ##
 1. Allow users to version large binaries easily with along side source code.
-2. Allow users on very large, multi-terabyte projects to fetch binaries exclusivly from a central store. No large file history lives on the client, only the current working set.
-3. Binary handling must be transparent to non-power users and other tools so that anyone and anything that uses git doesn't require knowlege of git-giant.
-4. Allow git power users to work locally in all their normal distributed git glory.
+2. Binary handling must be transparent to non-power users and other tools so that anyone and anything that uses git doesn't require knowlege of git-giant.
+3. Allow git power users to work locally in all their normal distributed git glory.
+4. Allow users on very large, multi-terabyte projects to fetch binaries exclusivly from a central store. No large file history lives on the client, only the current working set.
 
 ## Getting Started ##
 
@@ -102,7 +102,6 @@ git-giant needs to install some hooks and filters before you do your first check
 ### Known Issues ###
 
 ### TODO ###
-- ssh (sftp) support
 - Trim internal store after a pushing to a primary store
 - If you download a git archive from github, you'll only have the proxy files instead of the actual binary data. Add support for sucking down data from proxy files only without a git repo.
 - If you perform `git clone` rather than a `git giant clone`, you're hooped and you'll have to start over. This kind of sucks.
