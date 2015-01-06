@@ -978,7 +978,7 @@ namespace GitGiant
         static string GetFilePathFromSHA(string file_hash)
         {
             // Use the first 3 hex characters as the directory names which is 4096 directories
-            return String.Format("{0}/{1}/{2}/{3}.bin", file_hash[0], file_hash[1], file_hash[2], file_hash);
+            return String.Format("{0}/{1}/{2}/{3}.giant", file_hash[0], file_hash[1], file_hash[2], file_hash);
         }
             
         static string[] GetFilesAndStatusInRevision(string revision)

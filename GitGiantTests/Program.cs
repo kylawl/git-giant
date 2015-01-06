@@ -463,7 +463,7 @@ namespace GitGiantTests
 
         static string GetStorePathFromSHA(string sha)
         {
-            return PathCombine(string.Format("{0}/{1}/{2}", sha[0], sha[1], sha[2]), sha + ".bin");
+            return PathCombine(string.Format("{0}/{1}/{2}", sha[0], sha[1], sha[2]), sha + ".giant");
         }
 
         static string SHA1FromBytes(byte[] bytes)
