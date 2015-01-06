@@ -88,8 +88,8 @@ namespace GitGiant
 
             if (arg_command != null)
             {
-                LogLineDebug("Giant: {0}", string.Join(" ", args));
-                LogLineDebug("Giant: Current Dir: {0}", Directory.GetCurrentDirectory());
+                LogLineDebug("git-giant: {0}", string.Join(" ", args));
+                LogLineDebug("git-giant: Current Dir: {0}", Directory.GetCurrentDirectory());
 
                 CommandDelegate command;
                 if (!Commands.TryGetValue(arg_command, out command))
@@ -129,12 +129,12 @@ namespace GitGiant
 
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
-                LogLineDebug("Giant: Building list of file revivions to push to store.");
+                LogLineDebug("git-giant: Building list of file revivions to push to store.");
 
                 string push_info = null;
                 while ((push_info = stdin.ReadLine()) != null)
                 {
-                    LogLineDebug("Giant: Push info ({0})", push_info);
+                    LogLineDebug("git-giant: Push info ({0})", push_info);
 
                     string[] push_tokens = push_info.Split(' ');
 
@@ -169,18 +169,18 @@ namespace GitGiant
                             }
                         }
 
-                        LogLineDebug("Giant: Iterating file revisions");
+                        LogLineDebug("git-giant: Iterating file revisions");
 
                         string progress_msg = string.Format("Scanning tracked files in '{0}'", local_ref);
                        
                         int revision_index = 0;
                         foreach (string revision in rev_ids)
                         {
-                            Log("Giant: {0}\r", GetProgressString(progress_msg, revision_index++, rev_ids.Count));
+                            Log("git-giant: {0}\r", GetProgressString(progress_msg, revision_index++, rev_ids.Count));
 
                             string[] revision_files = GetFilesAndStatusInRevision(revision);
                                 
-                            LogLineDebug("Giant: Revision {0}, {1} file(s)", revision, revision_files.Length);
+                            LogLineDebug("git-giant: Revision {0}, {1} file(s)", revision, revision_files.Length);
 
                             for (int i = 0; i < revision_files.Length; i += 2)
                             {
@@ -189,7 +189,7 @@ namespace GitGiant
 
                                 if (status == "X")
                                 {
-                                    LogLine("Giant: According to git something has gone wrong with file '{0}:{1}'. Aborting push.", revision, file);
+                                    LogLine("git-giant: According to git something has gone wrong with file '{0}:{1}'. Aborting push.", revision, file);
                                     return Failed;
                                 }
 
@@ -201,14 +201,14 @@ namespace GitGiant
 
                                     if (proxy != null)
                                     {
-                                        LogDebug("Giant: Will push '{0}'", file);
+                                        LogDebug("git-giant: Will push '{0}'", file);
                                         proxy_revs.Add(proxy);
                                     }
                                 }
                             }
                         }
 
-                        LogLine("Giant: {0}, done.", GetProgressString(progress_msg, revision_index, rev_ids.Count));
+                        LogLine("git-giant: {0}, done.", GetProgressString(progress_msg, revision_index, rev_ids.Count));
                     }
                     else
                     {
@@ -220,7 +220,7 @@ namespace GitGiant
 
             if (proxy_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
-                LogLine("Giant: Local store directory is missing but should contain files.");
+                LogLine("git-giant: Local store directory is missing but should contain files.");
                 foreach (var file_rev in proxy_revs)
                 {
                     LogLine(file_rev.FileRev);
@@ -238,12 +238,12 @@ namespace GitGiant
             // Update the stores with the files
             //
 
-            LogLine("Giant: Updating store(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_url);
+            LogLine("git-giant: Updating store(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_url);
 
             var store_interfaces = GetStoreInterfaces();
             var store_infos = GetStores();
 
-            LogLineDebug("Giant: Available stores: {0}", store_infos.Count);
+            LogLineDebug("git-giant: Available stores: {0}", store_infos.Count);
 
             int primaries_updated = 0;
 
@@ -252,7 +252,7 @@ namespace GitGiant
                 string remote_url_string;
                 if (!store_data.TryGetValue("remote", out remote_url_string))
                 {
-                    LogLineDebug("Giant: Could not find remote url for store mapping '{0}'", store_data["name"]);
+                    LogLineDebug("git-giant: Could not find remote url for store mapping '{0}'", store_data["name"]);
                     continue;
                 }
 
@@ -260,7 +260,7 @@ namespace GitGiant
 
                 if (remote_url_string != arg_remote_url)
                 {
-                    LogLine("Giant: Stores {0} & {1} are not the same", remote_url_string, arg_remote_url);
+                    LogLine("git-giant: Stores {0} & {1} are not the same", remote_url_string, arg_remote_url);
                     continue;
                 }
 
@@ -269,7 +269,7 @@ namespace GitGiant
                 IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
                 if (store_interface == null || !store_interface.OpenStore(store_uri, store_data))
                 {
-                    LogLine("Giant: Couldn't open store '{1}' ({0})", store_uri, store_data["name"]);
+                    LogLine("git-giant: Couldn't open store '{1}' ({0})", store_uri, store_data["name"]);
                     continue;
                 }
 
@@ -282,7 +282,7 @@ namespace GitGiant
                 int file_index = 0;
                 foreach (var proxy_rev in proxy_revs)
                 {
-                    Log("Giant: {0}\r", GetProgressString(progress_msg, file_index, proxy_revs.Count));
+                    Log("git-giant: {0}\r", GetProgressString(progress_msg, file_index, proxy_revs.Count));
                     ++file_index;
 
                     // Build the mangled name
@@ -297,13 +297,13 @@ namespace GitGiant
                     }
                     else
                     {
-                        LogLine("Giant: Failed to find revision '{0}' in local store.", proxy_rev);
+                        LogLine("git-giant: Failed to find revision '{0}' in local store.", proxy_rev);
                     }
 
                     if (result == SyncResult.Failed)
                     {
                         store_interface.CloseStore();
-                        LogLine("Giant: Failed to push file {0} to {1}.", filepath, store_uri.LocalPath);
+                        LogLine("git-giant: Failed to push file {0} to {1}.", filepath, store_uri.LocalPath);
                         return Failed;
                     }
                     else if (result == SyncResult.Success)
@@ -323,20 +323,20 @@ namespace GitGiant
 
                 store_interface.CloseStore();
 
-                LogLine("Giant: {0}, done.", GetProgressString(progress_msg, file_index, proxy_revs.Count));
+                LogLine("git-giant: {0}, done.", GetProgressString(progress_msg, file_index, proxy_revs.Count));
 
                 if (IsPrimaryStore(store_data))
                 {
                     ++primaries_updated;
                 }
 
-                LogLine("Giant: {0} Copied, {1} Skipped", files_pushed, files_skipped + files_skipped_late);
-                LogLineDebug("Giant: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
+                LogLine("git-giant: {0} Copied, {1} Skipped", files_pushed, files_skipped + files_skipped_late);
+                LogLineDebug("git-giant: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
             }
 
             if (primaries_updated <= 0)
             {
-                LogLine("Giant: Failed to update a primary store for this remote.");
+                LogLine("git-giant: Failed to update a primary store for this remote.");
                 return Failed;
             }
 
@@ -368,7 +368,7 @@ namespace GitGiant
 
                 if (git_proc.WaitForExitFail(true))
                 {
-                    LogLine("Giant: Git failed");
+                    LogLine("git-giant: Git failed");
                     return git_proc.ExitCode;
                 }
 
@@ -390,7 +390,7 @@ namespace GitGiant
             {
                 bool giant_filtered = GetFilterAttribute(file) == "giant";
 
-                Log("Giant: {0}\r", GetProgressString(progress_msg, file_number++, staged_files.Length));
+                Log("git-giant: {0}\r", GetProgressString(progress_msg, file_number++, staged_files.Length));
 
                 using (Process git_proc = StartGit(string.Format("cat-file blob :\"{0}\"", file)))
                 {
@@ -407,16 +407,16 @@ namespace GitGiant
 
                         if (proxyfile_tag != GitGiantProxySignature)
                         {
-                            LogLineDebug("Giant: Needs restaging '{0}'.", file);
+                            LogLineDebug("git-giant: Needs restaging '{0}'.", file);
                             succeeded = false;
                             files_need_restaging = true;
                         }
 
-                        LogLineDebug("Giant: Filtered '{0}'.", file);
+                        LogLineDebug("git-giant: Filtered '{0}'.", file);
                     }
                     else
                     {
-                        LogLineDebug("Giant: Unfiltered '{0}'.", file);
+                        LogLineDebug("git-giant: Unfiltered '{0}'.", file);
 
                         // Just becasue there isn't an attribute saying it's binary, that doesn't mean it isn't.
                         // Scan the first block to see if it is.
@@ -466,7 +466,7 @@ namespace GitGiant
                         {
                             succeeded = false;
                             string type = is_binary ? "Binary" : "Text";
-                            LogLine("Giant: {0} file too big '{1}' ({2:N0} bytes).\r\n    Update .gitattributes to handle file.", type, file, size);
+                            LogLine("git-giant: {0} file too big '{1}' ({2:N0} bytes).\r\n    Update .gitattributes to handle file.", type, file, size);
 
                             files_over_limit = true;
                         }
@@ -474,22 +474,22 @@ namespace GitGiant
                 }
             }
 
-            LogLine("Giant: {0}, done.", GetProgressString(progress_msg, staged_files.Length, staged_files.Length));
+            LogLine("git-giant: {0}, done.", GetProgressString(progress_msg, staged_files.Length, staged_files.Length));
 
             if (!succeeded)
             {
                 if (files_over_limit)
                 {
-                    LogLine("Giant: Add a filter for the file/extention or bump up your limits and don't forget to restage");
-                    LogLine("Giant: If you have updated your .gitattributes, make sure it has been staged for this commit.");
+                    LogLine("git-giant: Add a filter for the file/extention or bump up your limits and don't forget to restage");
+                    LogLine("git-giant: If you have updated your .gitattributes, make sure it has been staged for this commit.");
                 }
 
                 if (files_need_restaging)
                 {
-                    LogLine("Giant: Files were just added to be filtered by git-giant. You need to restage before you can commit.");
+                    LogLine("git-giant: Files were just added to be filtered by git-giant. You need to restage before you can commit.");
                 }
 
-                LogLine("Giant: Aborting commit.");
+                LogLine("git-giant: Aborting commit.");
             }
 
             return succeeded ? Succeeded : Failed;
@@ -536,7 +536,7 @@ namespace GitGiant
                 // Acording to the git docs, it's possible for a filter to run on the same file multiple times so we need to handle
                 // the case where a proxy is passed in for a clean at some point. So far I've not seen this scenario occur,
                 // so until it's clear when and why this could happen in our setup, I'll leave this fail condition here to catch it.
-                LogLine("Giant: File '{0}' is already git-giant proxy, why are you cleaning again?", arg_filepath);
+                LogLine("git-giant: File '{0}' is already git-giant proxy, why are you cleaning again?", arg_filepath);
 
                 return Failed;
             }
@@ -556,9 +556,9 @@ namespace GitGiant
             }
 
 
-            LogLineDebug("Giant:  Name: {0}", arg_filepath);
-            LogLineDebug("Giant:  Hash: {0}", file_hash);
-            LogLineDebug("Giant: Bytes: {0}", file_stream.Length);
+            LogLineDebug("git-giant:  Name: {0}", arg_filepath);
+            LogLineDebug("git-giant:  Hash: {0}", file_hash);
+            LogLineDebug("git-giant: Bytes: {0}", file_stream.Length);
 
 
             // Dump the real file into the local store
@@ -597,7 +597,7 @@ namespace GitGiant
 
                 if (!gitgiant_sig.StartsWith(GitGiantProxySignature))
                 {
-                    LogLine("Giant: '{0}' is not a git-giant proxy file but is being smudged, aborting operation.", arg_filepath);
+                    LogLine("git-giant: '{0}' is not a git-giant proxy file but is being smudged, aborting operation.", arg_filepath);
                     return Failed;
                 }
 
@@ -615,9 +615,9 @@ namespace GitGiant
 
             var stores = GetStores();
 
-            Log("Giant: Fetching '{0}'...\r", arg_filepath);
+            Log("git-giant: Fetching '{0}'...\r", arg_filepath);
 
-            LogLineDebug("Giant: Store count: {0}", stores.Count);
+            LogLineDebug("git-giant: Store count: {0}", stores.Count);
 
             // Walk through all the stores/interfaces and attempt to retrevie a matching file from any of them
             foreach (var store in stores)
@@ -646,12 +646,12 @@ namespace GitGiant
 
                             string loaded_file_hash = SHA1FromBytes(file_contents);
                             
-                            LogLineDebug("Giant:     Repo File: {0}", arg_filepath);
-                            LogLineDebug("Giant:    Store Name: {0}", input_filename);
-                            LogLineDebug("Giant:   Expect Hash: {0}", expected_file_hash);
-                            LogLineDebug("Giant:   Loaded Hash: {0}", loaded_file_hash);
-                            LogLineDebug("Giant: Expected Size: {0}", expected_file_size);
-                            LogLineDebug("Giant:   Loaded Size: {0}", loaded_file_size);
+                            LogLineDebug("git-giant:     Repo File: {0}", arg_filepath);
+                            LogLineDebug("git-giant:    Store Name: {0}", input_filename);
+                            LogLineDebug("git-giant:   Expect Hash: {0}", expected_file_hash);
+                            LogLineDebug("git-giant:   Loaded Hash: {0}", loaded_file_hash);
+                            LogLineDebug("git-giant: Expected Size: {0}", expected_file_size);
+                            LogLineDebug("git-giant:   Loaded Size: {0}", loaded_file_size);
 
                             //
                             // Safety checking size and hash
@@ -659,19 +659,19 @@ namespace GitGiant
 
                             if (expected_file_size != loaded_file_size)
                             {
-                                LogLine("Giant: ERROR: File size missmatch with '{0}'", arg_filepath);
-                                LogLine("Giant: Store '{0}'", store_uri);
-                                LogLine("Giant: Expected {0}, got {1}", expected_file_size, loaded_file_size);
-                                LogLine("Giant: Will try another store, but this one should be tested for integrity");
+                                LogLine("git-giant: ERROR: File size missmatch with '{0}'", arg_filepath);
+                                LogLine("git-giant: Store '{0}'", store_uri);
+                                LogLine("git-giant: Expected {0}, got {1}", expected_file_size, loaded_file_size);
+                                LogLine("git-giant: Will try another store, but this one should be tested for integrity");
                                 continue;
                             }
 
                             if (loaded_file_hash != expected_file_hash)
                             {
-                                LogLine("Giant: ERROR: File hash missmatch with '{0}'", arg_filepath);
-                                LogLine("Giant: Store '{0}'", store_uri);
-                                LogLine("Giant: Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
-                                LogLine("Giant: Will try another store, but this one should be tested for integrity");
+                                LogLine("git-giant: ERROR: File hash missmatch with '{0}'", arg_filepath);
+                                LogLine("git-giant: Store '{0}'", store_uri);
+                                LogLine("git-giant: Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
+                                LogLine("git-giant: Will try another store, but this one should be tested for integrity");
                                 continue;
                             }
 
@@ -694,7 +694,7 @@ namespace GitGiant
                         }
                         else
                         {
-                            LogLineDebug("Giant: Store {0} does not contain file.", store_uri.AbsoluteUri);
+                            LogLineDebug("git-giant: Store {0} does not contain file.", store_uri.AbsoluteUri);
                             LogLineDebug("    Repo File: {0}", arg_filepath);
                             LogLineDebug("    Store Name: {0}", input_filename);
                         }
@@ -702,17 +702,17 @@ namespace GitGiant
                 }
                 else
                 {
-                    LogLine("Giant: Unrecognized store type in '{0}'.", store_uri.ToString());
+                    LogLine("git-giant: Unrecognized store type in '{0}'.", store_uri.ToString());
                 }
             }
 
             if (succeeded)
             {
-                LogLine("Giant: Fetching '{0}'... Succeeded", arg_filepath);
+                LogLine("git-giant: Fetching '{0}'... Succeeded", arg_filepath);
             }
             else
             {
-                LogLine("Giant: Fetching '{0}'... Failed", arg_filepath);
+                LogLine("git-giant: Fetching '{0}'... Failed", arg_filepath);
             }
 
             return succeeded ? Succeeded : Failed;
@@ -735,12 +735,12 @@ namespace GitGiant
                 {
                     file_stream.CopyTo(output_stream);
 
-                    LogLineDebug("Giant: Local store updated with '{0}'.", filepath);
+                    LogLineDebug("git-giant: Local store updated with '{0}'.", filepath);
                 }
             }
             else
             {
-                LogLineDebug("Giant: Local store update skipped");
+                LogLineDebug("git-giant: Local store update skipped");
             }
         }
 
@@ -754,7 +754,7 @@ namespace GitGiant
             Uri store_uri;
             if (!Uri.TryCreate(arg_store, UriKind.Absolute, out store_uri))
             {
-                LogLine("Giant: Invalid store uri '{0}'", arg_store);
+                LogLine("git-giant: Invalid store uri '{0}'", arg_store);
                 return Failed;
             }
 
@@ -762,7 +762,7 @@ namespace GitGiant
             var store_interfaces = GetStoreInterfaces();
             if (!store_interfaces.TryGetValue(store_uri.Scheme, out store_interface))
             {
-                LogLine("Giant: Unsupported protocol in uri '{0}'", store_uri.AbsoluteUri);
+                LogLine("git-giant: Unsupported protocol in uri '{0}'", store_uri.AbsoluteUri);
                 return Failed;
             }
 
@@ -803,7 +803,7 @@ namespace GitGiant
 
                         if (status == "X")
                         {
-                            LogLine("Giant: According to git something has gone wrong with file '{0}'. This is probably a bug in git and should be reported.", file_rev);
+                            LogLine("git-giant: According to git something has gone wrong with file '{0}'. This is probably a bug in git and should be reported.", file_rev);
                             return Failed;
                         }
 
@@ -882,7 +882,7 @@ namespace GitGiant
             }
             else
             {
-                LogLine("Giant: Failed to open store '{0}'", store_uri.AbsoluteUri);
+                LogLine("git-giant: Failed to open store '{0}'", store_uri.AbsoluteUri);
                 return Failed;
             }
 
@@ -932,7 +932,7 @@ namespace GitGiant
         {
             if (!Directory.Exists(".git"))
             {
-                LogLine("Giant: No git repository at '{0}'. Init a repo before using git-giant.", Directory.GetCurrentDirectory());
+                LogLine("git-giant: No git repository at '{0}'. Init a repo before using git-giant.", Directory.GetCurrentDirectory());
                 return Failed;
             }
                 
@@ -1234,7 +1234,7 @@ namespace GitGiant
                 return process;
             }
 
-            LogLine("Giant: Failed to start git.");
+            LogLine("git-giant: Failed to start git.");
             return null;
         }
 

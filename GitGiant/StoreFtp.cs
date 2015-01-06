@@ -19,7 +19,7 @@ namespace GitGiant
         {
             if (Client != null)
             {
-                Program.LogLine("Giant: Store is already open, did you forget to close the other one first?");
+                Program.LogLine("git-giant: Store is already open, did you forget to close the other one first?");
                 return false;
             }
 
@@ -52,7 +52,7 @@ namespace GitGiant
                 }
                 else
                 {
-                    Program.LogLineDebug("Giant: Can't connect to {0}", uri.AbsoluteUri);
+                    Program.LogLineDebug("git-giant: Can't connect to {0}", uri.AbsoluteUri);
                 }
             }
 
@@ -82,7 +82,7 @@ namespace GitGiant
                         }
                         catch
                         {
-                            Program.LogLine("Giant: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
+                            Program.LogLine("git-giant: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
                                 dir, Client.GetWorkingDirectory());
 
                             return SyncResult.Failed;

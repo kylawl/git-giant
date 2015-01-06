@@ -82,7 +82,7 @@ namespace GitGiant
                         }
                         catch
                         {
-                            Program.LogLine("Giant: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
+                            Program.LogLine("git-giant: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
                                 dir, Client.WorkingDirectory);
 
                             return SyncResult.Failed;

@@ -14,7 +14,7 @@ namespace GitGiant
 
             if (!directory_exists)
             {
-                Program.LogLineDebug("Giant: Unable to find store '{0}'", uri.LocalPath);
+                Program.LogLineDebug("git-giant: Unable to find store '{0}'", uri.LocalPath);
             }
 
             return directory_exists && uri.Scheme == Uri.UriSchemeFile;
@@ -34,12 +34,12 @@ namespace GitGiant
             {
                 if (!File.Exists(store_filepath))
                 {
-                    Program.LogLineDebug("Giant: File doesn't exist in store, will update");
+                    Program.LogLineDebug("git-giant: File doesn't exist in store, will update");
 
                     if (!Directory.Exists(dir))
                     {
                         Directory.CreateDirectory(dir);
-                        Program.LogLineDebug("Giant: Created directory '{0}'", dir);
+                        Program.LogLineDebug("git-giant: Created directory '{0}'", dir);
                     }
 
                     Guid guid = Guid.NewGuid();
