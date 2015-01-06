@@ -1,4 +1,0 @@
-#!/bin/bash
-if [ "$(uname)" = "Darwin" ]; then
-	mono `dirname $BASH_SOURCE`/git-bifrost.exe "$@"
-fi

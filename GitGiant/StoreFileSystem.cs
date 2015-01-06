@@ -4,7 +4,7 @@ using System;
 using System.IO;
 using System.Collections.Generic;
 
-namespace GitBifrost
+namespace GitGiant
 {
     class StoreFileSystem : IStoreInterface
     {
@@ -14,7 +14,7 @@ namespace GitBifrost
 
             if (!directory_exists)
             {
-                Program.LogLine(LogNoiseLevel.Loud, "Bifrost: Unable to find store '{0}'", uri.LocalPath);
+                Program.LogLineDebug("Giant: Unable to find store '{0}'", uri.LocalPath);
             }
 
             return directory_exists && uri.Scheme == Uri.UriSchemeFile;
@@ -34,12 +34,12 @@ namespace GitBifrost
             {
                 if (!File.Exists(store_filepath))
                 {
-                    Program.LogLine(LogNoiseLevel.Debug, "File doesn't exist in store, will update");
+                    Program.LogLineDebug("Giant: File doesn't exist in store, will update");
 
                     if (!Directory.Exists(dir))
                     {
                         Directory.CreateDirectory(dir);
-                        Program.LogLine(LogNoiseLevel.Debug, "Created directory '{0}'", dir);
+                        Program.LogLineDebug("Giant: Created directory '{0}'", dir);
                     }
 
                     Guid guid = Guid.NewGuid();

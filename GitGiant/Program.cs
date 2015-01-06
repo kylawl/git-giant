@@ -13,7 +13,7 @@ using System.Text;
 using Mono.Unix.Native;
 #endif // __MonoCS__
 
-namespace GitBifrost
+namespace GitGiant
 {
     delegate int CommandDelegate(string[] args);
 
@@ -24,14 +24,14 @@ namespace GitBifrost
         Debug = 2
     }
 
-    class BifrostPoxy
+    class GitGiantPoxy
     {
         public string FileRev;
         public string Version;
         public string SHA1;
         public long FileSize;
 
-        public BifrostPoxy(string fileRev, string version, string sha1, long fileSize)
+        public GitGiantPoxy(string fileRev, string version, string sha1, long fileSize)
         {
             FileRev = fileRev;
             Version = version;
@@ -43,9 +43,9 @@ namespace GitBifrost
 
     class Program
     {
-        const int BifrostVersion = 1;
-        const string BifrostProxySignature = "~*@git-bifrost@*~";
-        const string LocalStoreLocation = "./.git/bifrost/data";
+        const int GitGiantVersion = 1;
+        const string GitGiantProxySignature = "~*@git-giant@*~";
+        const string LocalStoreLocation = "./.git/giant/store";
         const string GitEmptySha = "0000000000000000000000000000000000000000";
         const int FirstFewBytes = 8000;
         const string TextSizeThresholdKey = "repo.text-size-threshold";
@@ -57,6 +57,12 @@ namespace GitBifrost
         const int Succeeded = 0;
         const int Failed = 1;
 
+        #if !(__MonoCS__)
+        const string ExecName = "git-giant.exe";
+        #else
+        const string ExecName = "git-giant";
+        #endif
+
         static readonly char[] NullChar = new char[] { '\0' };
 
         static LogNoiseLevel NoiseLevel = LogNoiseLevel.Normal;
@@ -65,7 +71,7 @@ namespace GitBifrost
         {
             int result = Succeeded;
 
-            Enum.TryParse(Environment.GetEnvironmentVariable("GITBIFROST_VERBOSITY"), true, out NoiseLevel);
+            Enum.TryParse(Environment.GetEnvironmentVariable("GITGIANT_LOGLEVEL"), true, out NoiseLevel);
 
             Dictionary<string, CommandDelegate> Commands = new Dictionary<string, CommandDelegate>(10);
 
@@ -82,9 +88,8 @@ namespace GitBifrost
 
             if (arg_command != null)
             {
-                LogLine(LogNoiseLevel.Debug, "Bifrost: {0}", string.Join(" ", args));
-                LogLine(LogNoiseLevel.Debug, "Bifrost: Current Dir: {0}", Directory.GetCurrentDirectory());
-                // LogLine("PATH: {0}", Environment.GetEnvironmentVariable("PATH"));
+                LogLineDebug("Giant: {0}", string.Join(" ", args));
+                LogLineDebug("Giant: Current Dir: {0}", Directory.GetCurrentDirectory());
 
                 CommandDelegate command;
                 if (!Commands.TryGetValue(arg_command, out command))
@@ -114,22 +119,22 @@ namespace GitBifrost
             string arg_remote_name = args[1];
             string arg_remote_url = args[2];
 
-            char[] proxy_sig_buffer = new char[BifrostProxySignature.Length];
+            char[] proxy_sig_buffer = new char[GitGiantProxySignature.Length];
 
             //
             // Collect up all the file revisions we need to push to the stores
             //
 
-            var proxy_revs = new List<BifrostPoxy>();
+            var proxy_revs = new List<GitGiantPoxy>();
 
             using (StreamReader stdin = new StreamReader(Console.OpenStandardInput()))
             {
-                LogLine(LogNoiseLevel.Debug, "Bifrost: Building list of file revivions to push to store.");
+                LogLineDebug("Giant: Building list of file revivions to push to store.");
 
                 string push_info = null;
                 while ((push_info = stdin.ReadLine()) != null)
                 {
-                    LogLine(LogNoiseLevel.Debug, "Bifrost: push info ({0})", push_info);
+                    LogLineDebug("Giant: Push info ({0})", push_info);
 
                     string[] push_tokens = push_info.Split(' ');
 
@@ -143,10 +148,10 @@ namespace GitBifrost
                         // Get the individual revision ids between local and the remote commit id's
                         var rev_ids = new List<string>();
                         {
-                            /* When performing a git-push, we need to determine what files are in the bifrost internal store and that have yet to be pushed to a primary store.
+                            /* When performing a git-push, we need to determine what files are in the git-giant internal store and that have yet to be pushed to a primary store.
                              * This means that we need to comb through all files in all commits in local_ref that have yet to be pushed. 
                              * If you've been working for a very long time without a push, this can take a bit of time.
-                             * The reason we don't simply push everything in the bifrost internal store is becasue we want to verify 
+                             * The reason we don't simply push everything in the git-giant internal store is becasue we want to verify 
                              * the integrity of the local store (ie no files are missing/hashes checkout) before we can safely share everything with a new repository.
                              */
 
@@ -164,18 +169,18 @@ namespace GitBifrost
                             }
                         }
 
-                        LogLine(LogNoiseLevel.Debug, "Bifrost: Iterating file revisions");
+                        LogLineDebug("Giant: Iterating file revisions");
 
-                        string progress_msg = string.Format("Bifrost: Scanning tracked files in '{0}'", local_ref);
+                        string progress_msg = string.Format("Scanning tracked files in '{0}'", local_ref);
                        
                         int revision_index = 0;
                         foreach (string revision in rev_ids)
                         {
-                            Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index++, rev_ids.Count, "\r"));
+                            Log("Giant: {0}\r", GetProgressString(progress_msg, revision_index++, rev_ids.Count));
 
                             string[] revision_files = GetFilesAndStatusInRevision(revision);
                                 
-                            LogLine(LogNoiseLevel.Debug, "Bifrost: Revision {0}, {1} file(s)", revision, revision_files.Length);
+                            LogLineDebug("Giant: Revision {0}, {1} file(s)", revision, revision_files.Length);
 
                             for (int i = 0; i < revision_files.Length; i += 2)
                             {
@@ -184,7 +189,7 @@ namespace GitBifrost
 
                                 if (status == "X")
                                 {
-                                    LogLine(LogNoiseLevel.Normal, "Bifrost: According to git something has gone wrong. Aborting push.");
+                                    LogLine("Giant: According to git something has gone wrong with file '{0}:{1}'. Aborting push.", revision, file);
                                     return Failed;
                                 }
 
@@ -192,18 +197,18 @@ namespace GitBifrost
                                 if (status != "D")
                                 {
                                     string file_rev = string.Format("{0}:{1}", revision, file);
-                                    BifrostPoxy proxy = GetProxyData(file_rev);
+                                    GitGiantPoxy proxy = GetProxyData(file_rev);
 
                                     if (proxy != null)
                                     {
-                                        LogLine(LogNoiseLevel.Debug, "Bifrost: Will push '{0}'", file);
+                                        LogDebug("Giant: Will push '{0}'", file);
                                         proxy_revs.Add(proxy);
                                     }
                                 }
                             }
                         }
 
-                        LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, revision_index, rev_ids.Count, ", done."));
+                        LogLine("Giant: {0}, done.", GetProgressString(progress_msg, revision_index, rev_ids.Count));
                     }
                     else
                     {
@@ -215,17 +220,17 @@ namespace GitBifrost
 
             if (proxy_revs.Count > 0 && !Directory.Exists(LocalStoreLocation))
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Local store directory is missing but should contain files.");
+                LogLine("Giant: Local store directory is missing but should contain files.");
                 foreach (var file_rev in proxy_revs)
                 {
-                    LogLine(LogNoiseLevel.Normal, file_rev.FileRev);
+                    LogLine(file_rev.FileRev);
                 }
                 return Failed;
             }
 
             if (proxy_revs.Count == 0)
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: No files to push.");
+                LogLine("No files to push.");
                 return Succeeded;
             }
 
@@ -233,12 +238,12 @@ namespace GitBifrost
             // Update the stores with the files
             //
 
-            LogLine(LogNoiseLevel.Normal, "Bifrost: Updating store(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_url);
+            LogLine("Giant: Updating store(s) for remote '{0}' ({1})", arg_remote_name, arg_remote_url);
 
             var store_interfaces = GetStoreInterfaces();
             var store_infos = GetStores();
 
-            LogLine(LogNoiseLevel.Debug, "Bifrost: Available stores: {0}", store_infos.Count);
+            LogLineDebug("Giant: Available stores: {0}", store_infos.Count);
 
             int primaries_updated = 0;
 
@@ -247,7 +252,7 @@ namespace GitBifrost
                 string remote_url_string;
                 if (!store_data.TryGetValue("remote", out remote_url_string))
                 {
-                    LogLine(LogNoiseLevel.Debug, "Bifrost: Could not find remote url for store mapping '{0}'", store_data["name"]);
+                    LogLineDebug("Giant: Could not find remote url for store mapping '{0}'", store_data["name"]);
                     continue;
                 }
 
@@ -255,7 +260,7 @@ namespace GitBifrost
 
                 if (remote_url_string != arg_remote_url)
                 {
-                    LogLine(LogNoiseLevel.Debug, "Bifrost: Stores {0} & {1} are not the same", remote_url_string, arg_remote_url);
+                    LogLine("Giant: Stores {0} & {1} are not the same", remote_url_string, arg_remote_url);
                     continue;
                 }
 
@@ -264,7 +269,7 @@ namespace GitBifrost
                 IStoreInterface store_interface = store_interfaces[store_uri.Scheme];
                 if (store_interface == null || !store_interface.OpenStore(store_uri, store_data))
                 {
-                    LogLine(LogNoiseLevel.Loud, "Couldn't open store '{1}' ({0})", store_uri, store_data["name"]);
+                    LogLine("Giant: Couldn't open store '{1}' ({0})", store_uri, store_data["name"]);
                     continue;
                 }
 
@@ -272,12 +277,12 @@ namespace GitBifrost
                 int files_skipped = 0;
                 int files_skipped_late = 0;
 
-                string progress_msg = string.Format("Bifrost: Updating store '{0}'", store_uri.AbsoluteUri);
+                string progress_msg = string.Format("Updating store '{0}'", store_uri.AbsoluteUri);
 
                 int file_index = 0;
                 foreach (var proxy_rev in proxy_revs)
                 {
-                    Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, proxy_revs.Count, "\r"));
+                    Log("Giant: {0}\r", GetProgressString(progress_msg, file_index, proxy_revs.Count));
                     ++file_index;
 
                     // Build the mangled name
@@ -292,13 +297,13 @@ namespace GitBifrost
                     }
                     else
                     {
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to find revision '{0}' in local store.", proxy_rev);
+                        LogLine("Giant: Failed to find revision '{0}' in local store.", proxy_rev);
                     }
 
                     if (result == SyncResult.Failed)
                     {
                         store_interface.CloseStore();
-                        LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to push file {0} to {1}.", filepath, store_uri.LocalPath);
+                        LogLine("Giant: Failed to push file {0} to {1}.", filepath, store_uri.LocalPath);
                         return Failed;
                     }
                     else if (result == SyncResult.Success)
@@ -318,20 +323,20 @@ namespace GitBifrost
 
                 store_interface.CloseStore();
 
-                LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_index, proxy_revs.Count, ", done."));
+                LogLine("Giant: {0}, done.", GetProgressString(progress_msg, file_index, proxy_revs.Count));
 
                 if (IsPrimaryStore(store_data))
                 {
                     ++primaries_updated;
                 }
 
-                LogLine(LogNoiseLevel.Normal, "Bifrost: {0} Copied, {1} Skipped", files_pushed, files_skipped + files_skipped_late);
-                LogLine(LogNoiseLevel.Loud, "Bifrost: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
+                LogLine("Giant: {0} Copied, {1} Skipped", files_pushed, files_skipped + files_skipped_late);
+                LogLineDebug("Giant: {0} Copied, {1} Skipped, {2} Skipped late", files_pushed, files_skipped, files_skipped_late);
             }
 
             if (primaries_updated <= 0)
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to update a primary store for this remote.");
+                LogLine("Giant: Failed to update a primary store for this remote.");
                 return Failed;
             }
 
@@ -350,7 +355,7 @@ namespace GitBifrost
             return false;
         }
 
-        // Verify that the staged files are reasonable to fit in a git repo filtered by bifrost
+        // Verify that the staged files are reasonable to fit in a git repo filtered by git-giant
         static int CmdHookPreCommit(string[] args)
         {
             string[] staged_files = null;
@@ -363,7 +368,7 @@ namespace GitBifrost
 
                 if (git_proc.WaitForExitFail(true))
                 {
-                    LogLine(LogNoiseLevel.Normal, "Git failed");
+                    LogLine("Giant: Git failed");
                     return git_proc.ExitCode;
                 }
 
@@ -378,40 +383,40 @@ namespace GitBifrost
 
             int file_number = 0;
 
-            int proxyid_numbytes = Encoding.UTF8.GetByteCount(BifrostProxySignature);
+            int proxyid_numbytes = Encoding.UTF8.GetByteCount(GitGiantProxySignature);
 
-            string progress_msg = "Bifrost: Validating staged files";
+            string progress_msg = "Validating staged files";
             foreach (string file in staged_files)
             {
-                bool bifrost_filtered = GetFilterAttribute(file) == "bifrost";
+                bool giant_filtered = GetFilterAttribute(file) == "giant";
 
-                Log(LogNoiseLevel.Normal, GetProgressString(progress_msg, file_number++, staged_files.Length, "\r"));
+                Log("Giant: {0}\r", GetProgressString(progress_msg, file_number++, staged_files.Length));
 
                 using (Process git_proc = StartGit(string.Format("cat-file blob :\"{0}\"", file)))
                 {
                     Stream proc_stream = git_proc.StandardOutput.BaseStream;
-                    if (bifrost_filtered)
+                    if (giant_filtered)
                     {
-                        // If the file is already filtered by bifrost, make sure that the staged file is in fact
-                        // a bifrost proxy file if it isn't the user needs to restage the file in order to allow the clean filter to run.
-                        // This is likely to happen when you modify your git attributes to include a file in bifrost.
+                        // If the file is already filtered by git-giant, make sure that the staged file is in fact
+                        // a git-giant proxy file if it isn't the user needs to restage the file in order to allow the clean filter to run.
+                        // This is likely to happen when you modify your git attributes to include a file in git-giant.
 
                         int bytes_read = proc_stream.Read(scratch_buffer, 0, proxyid_numbytes);
 
                         string proxyfile_tag = Encoding.UTF8.GetString(scratch_buffer, 0, bytes_read);
 
-                        if (proxyfile_tag != BifrostProxySignature)
+                        if (proxyfile_tag != GitGiantProxySignature)
                         {
-                            LogLine(LogNoiseLevel.Loud, "Bifrost: Needs restaging '{0}'.", file);
+                            LogLineDebug("Giant: Needs restaging '{0}'.", file);
                             succeeded = false;
                             files_need_restaging = true;
                         }
 
-                        LogLine(LogNoiseLevel.Debug, "Bifrost: Filtered '{0}'.", file);
+                        LogLineDebug("Giant: Filtered '{0}'.", file);
                     }
                     else
                     {
-                        LogLine(LogNoiseLevel.Debug, "Bifrost: Unfiltered '{0}'.", file);
+                        LogLineDebug("Giant: Unfiltered '{0}'.", file);
 
                         // Just becasue there isn't an attribute saying it's binary, that doesn't mean it isn't.
                         // Scan the first block to see if it is.
@@ -450,18 +455,18 @@ namespace GitBifrost
                         int threshold;
                         if (is_binary)
                         {
-                            threshold = GitConfigGetInt(BinSizeThresholdKey, DefaultBinSizeThreshold, ".gitbifrost");
+                            threshold = GitConfigGetInt(BinSizeThresholdKey, DefaultBinSizeThreshold, ".gitgiant");
                         }
                         else
                         {
-                            threshold = GitConfigGetInt(TextSizeThresholdKey, DefaultTextSizeThreshold, ".gitbifrost");
+                            threshold = GitConfigGetInt(TextSizeThresholdKey, DefaultTextSizeThreshold, ".gitgiant");
                         }
 
                         if (threshold > -1 && size > threshold)
                         {
                             succeeded = false;
                             string type = is_binary ? "Binary" : "Text";
-                            LogLine(LogNoiseLevel.Normal, "Bifrost: {0} file too big '{1}' ({2:N0} bytes).", type, file, size);
+                            LogLine("Giant: {0} file too big '{1}' ({2:N0} bytes).\r\n    Update .gitattributes to handle file.", type, file, size);
 
                             files_over_limit = true;
                         }
@@ -469,22 +474,22 @@ namespace GitBifrost
                 }
             }
 
-            LogLine(LogNoiseLevel.Normal, GetProgressString(progress_msg, staged_files.Length, staged_files.Length, ", done."));
+            LogLine("Giant: {0}, done.", GetProgressString(progress_msg, staged_files.Length, staged_files.Length));
 
             if (!succeeded)
             {
                 if (files_over_limit)
                 {
-                    LogLine(LogNoiseLevel.Normal, "Bifrost: Add a filter for the file/extention or bump up your limits and don't forget to restage");
-                    LogLine(LogNoiseLevel.Normal, "Bifrost: If you have updated your .gitattributes, make sure it has been staged for this commit.");
+                    LogLine("Giant: Add a filter for the file/extention or bump up your limits and don't forget to restage");
+                    LogLine("Giant: If you have updated your .gitattributes, make sure it has been staged for this commit.");
                 }
 
                 if (files_need_restaging)
                 {
-                    LogLine(LogNoiseLevel.Normal, "Bifrost: Files were just added to be filtered by git-bifrost. You need to restage before you can commit.");
+                    LogLine("Giant: Files were just added to be filtered by git-giant. You need to restage before you can commit.");
                 }
 
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Aborting commit.");
+                LogLine("Giant: Aborting commit.");
             }
 
             return succeeded ? Succeeded : Failed;
@@ -517,21 +522,21 @@ namespace GitBifrost
                 file_stream.Position = 0;
             }
 
-            bool is_bifrost_proxy = false;
+            bool is_gitgiant_proxy = false;
 
             {
                 StreamReader reader = new StreamReader(file_stream);
-                is_bifrost_proxy = reader.ReadLine().StartsWith(BifrostProxySignature);
+                is_gitgiant_proxy = reader.ReadLine().StartsWith(GitGiantProxySignature);
 
                 file_stream.Position = 0;
             }
 
-            if (is_bifrost_proxy)
+            if (is_gitgiant_proxy)
             {
                 // Acording to the git docs, it's possible for a filter to run on the same file multiple times so we need to handle
                 // the case where a proxy is passed in for a clean at some point. So far I've not seen this scenario occur,
                 // so until it's clear when and why this could happen in our setup, I'll leave this fail condition here to catch it.
-                LogLine(LogNoiseLevel.Normal, "Bifrost: File '{0}' is already bifrost proxy, why are you cleaning again?", arg_filepath);
+                LogLine("Giant: File '{0}' is already git-giant proxy, why are you cleaning again?", arg_filepath);
 
                 return Failed;
             }
@@ -544,21 +549,20 @@ namespace GitBifrost
             // Give git the proxy instead of the actual file
             using (StreamWriter output_writer = new StreamWriter(Console.OpenStandardOutput()))
             {
-                output_writer.WriteLine(BifrostProxySignature);
-                output_writer.WriteLine(BifrostVersion);
+                output_writer.WriteLine(GitGiantProxySignature);
+                output_writer.WriteLine(GitGiantVersion);
                 output_writer.WriteLine(file_hash);
                 output_writer.WriteLine(file_stream.Length);
             }
 
 
-            LogLine(LogNoiseLevel.Loud, " Name: {0}", arg_filepath);
-            LogLine(LogNoiseLevel.Loud, " Hash: {0}", file_hash);
-            LogLine(LogNoiseLevel.Loud, "Bytes: {0}", file_stream.Length);
+            LogLineDebug("Giant:  Name: {0}", arg_filepath);
+            LogLineDebug("Giant:  Hash: {0}", file_hash);
+            LogLineDebug("Giant: Bytes: {0}", file_stream.Length);
 
 
             // Dump the real file into the local store
             string output_filename = GetFilePathFromSHA(file_hash);
-
 
             WriteToLocalStore(file_stream, output_filename);
 
@@ -589,15 +593,15 @@ namespace GitBifrost
 
             using (StreamReader input_reader = new StreamReader(Console.OpenStandardInput()))
             {
-                string bifrost_sig = input_reader.ReadLine();
+                string gitgiant_sig = input_reader.ReadLine();
 
-                if (!bifrost_sig.StartsWith(BifrostProxySignature))
+                if (!gitgiant_sig.StartsWith(GitGiantProxySignature))
                 {
-                    LogLine(LogNoiseLevel.Normal, "Bifrost: '{0}' is not a bifrost proxy file but is being smudged.", arg_filepath);
+                    LogLine("Giant: '{0}' is not a git-giant proxy file but is being smudged, aborting operation.", arg_filepath);
                     return Failed;
                 }
 
-                string bifrost_ver = input_reader.ReadLine();
+                string gitgiant_ver = input_reader.ReadLine();
                 expected_file_hash = input_reader.ReadLine();
                 expected_file_size = int.Parse(input_reader.ReadLine());
             }
@@ -611,7 +615,7 @@ namespace GitBifrost
 
             var stores = GetStores();
 
-            LogLine(LogNoiseLevel.Debug, "Bifrost: Store count: {0}", stores.Count);
+            LogLineDebug("Giant: Store count: {0}", stores.Count);
 
             // Walk through all the stores/interfaces and attempt to retrevie a matching file from any of them
             foreach (var store in stores)
@@ -640,12 +644,12 @@ namespace GitBifrost
 
                             string loaded_file_hash = SHA1FromBytes(file_contents);
                             
-                            LogLine(LogNoiseLevel.Loud, "    Repo File: {0}", arg_filepath);
-                            LogLine(LogNoiseLevel.Loud, "   Store Name: {0}", input_filename);
-                            LogLine(LogNoiseLevel.Loud, "  Expect Hash: {0}", expected_file_hash);
-                            LogLine(LogNoiseLevel.Loud, "  Loaded Hash: {0}", loaded_file_hash);
-                            LogLine(LogNoiseLevel.Loud, "Expected Size: {0}", expected_file_size);
-                            LogLine(LogNoiseLevel.Loud, "  Loaded Size: {0}", loaded_file_size);
+                            LogLineDebug("Giant:     Repo File: {0}", arg_filepath);
+                            LogLineDebug("Giant:    Store Name: {0}", input_filename);
+                            LogLineDebug("Giant:   Expect Hash: {0}", expected_file_hash);
+                            LogLineDebug("Giant:   Loaded Hash: {0}", loaded_file_hash);
+                            LogLineDebug("Giant: Expected Size: {0}", expected_file_size);
+                            LogLineDebug("Giant:   Loaded Size: {0}", loaded_file_size);
 
                             //
                             // Safety checking size and hash
@@ -653,21 +657,19 @@ namespace GitBifrost
 
                             if (expected_file_size != loaded_file_size)
                             {
-                                LogLine(LogNoiseLevel.Normal, "!!!ERROR!!!");
-                                LogLine(LogNoiseLevel.Normal, "File size missmatch with '{0}'", arg_filepath);
-                                LogLine(LogNoiseLevel.Normal, "Store '{0}'", store_uri.AbsoluteUri);
-                                LogLine(LogNoiseLevel.Normal, "Expected {0}, got {1}", expected_file_size, loaded_file_size);
-                                LogLine(LogNoiseLevel.Normal, "Will try another store, but this one should be tested for integrity");
+                                LogLine("Giant: ERROR: File size missmatch with '{0}'", arg_filepath);
+                                LogLine("Giant: Store '{0}'", store_uri);
+                                LogLine("Giant: Expected {0}, got {1}", expected_file_size, loaded_file_size);
+                                LogLine("Giant: Will try another store, but this one should be tested for integrity");
                                 continue;
                             }
 
                             if (loaded_file_hash != expected_file_hash)
                             {
-                                LogLine(LogNoiseLevel.Normal, "!!!ERROR!!!");
-                                LogLine(LogNoiseLevel.Normal, "File hash missmatch with '{0}'", arg_filepath);
-                                LogLine(LogNoiseLevel.Normal, "Store '{0}'", store_uri.AbsoluteUri);
-                                LogLine(LogNoiseLevel.Normal, "Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
-                                LogLine(LogNoiseLevel.Normal, "Will try another store, but this one should be tested for integrity");
+                                LogLine("Giant: ERROR: File hash missmatch with '{0}'", arg_filepath);
+                                LogLine("Giant: Store '{0}'", store_uri);
+                                LogLine("Giant: Expected {0}, got {1}", expected_file_hash, loaded_file_hash);
+                                LogLine("Giant: Will try another store, but this one should be tested for integrity");
                                 continue;
                             }
 
@@ -690,21 +692,21 @@ namespace GitBifrost
                         }
                         else
                         {
-                            LogLine(LogNoiseLevel.Loud, "Bifrost: Store {0} does not contain file.", store_uri.AbsoluteUri);
-                            LogLine(LogNoiseLevel.Loud, "    Repo File: {0}", arg_filepath);
-                            LogLine(LogNoiseLevel.Loud, "   Store Name: {0}", input_filename);
+                            LogLineDebug("Giant: Store {0} does not contain file.", store_uri.AbsoluteUri);
+                            LogLineDebug("    Repo File: {0}", arg_filepath);
+                            LogLineDebug("    Store Name: {0}", input_filename);
                         }
                     }
                 }
                 else
                 {
-                    LogLine(LogNoiseLevel.Normal, "Unrecognized store type in '{0}'.", store_uri.ToString());
+                    LogLine("Giant: Unrecognized store type in '{0}'.", store_uri.ToString());
                 }
             }
 
             if (!succeeded)
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to get file '{0}'.", arg_filepath);
+                LogLine("Giant: Failed to get file '{0}'.", arg_filepath);
             }
 
             return succeeded ? Succeeded : Failed;
@@ -727,12 +729,12 @@ namespace GitBifrost
                 {
                     file_stream.CopyTo(output_stream);
 
-                    LogLine(LogNoiseLevel.Loud, "Bifrost: Local store updated with '{0}'.", filepath);
+                    LogLineDebug("Giant: Local store updated with '{0}'.", filepath);
                 }
             }
             else
             {
-                LogLine(LogNoiseLevel.Loud, "Bifrost: Local store update skipped");
+                LogLineDebug("Giant: Local store update skipped");
             }
         }
 
@@ -746,7 +748,7 @@ namespace GitBifrost
             Uri store_uri;
             if (!Uri.TryCreate(arg_store, UriKind.Absolute, out store_uri))
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Invalid store uri '{0}'", arg_store);
+                LogLine("Giant: Invalid store uri '{0}'", arg_store);
                 return Failed;
             }
 
@@ -754,7 +756,7 @@ namespace GitBifrost
             var store_interfaces = GetStoreInterfaces();
             if (!store_interfaces.TryGetValue(store_uri.Scheme, out store_interface))
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Unsupported protocol in uri '{0}'", store_uri.AbsoluteUri);
+                LogLine("Giant: Unsupported protocol in uri '{0}'", store_uri.AbsoluteUri);
                 return Failed;
             }
 
@@ -795,14 +797,14 @@ namespace GitBifrost
 
                         if (status == "X")
                         {
-                            LogLine(LogNoiseLevel.Normal, "Bifrost: According to git something has gone wrong with file '{0}'. This is probably a bug in git and should be reported.", file_rev);
+                            LogLine("Giant: According to git something has gone wrong with file '{0}'. This is probably a bug in git and should be reported.", file_rev);
                             return Failed;
                         }
 
                         // Skip files that have been deleted
                         if (status != "D")
                         {
-                            BifrostPoxy proxy = GetProxyData(file_rev);
+                            GitGiantPoxy proxy = GetProxyData(file_rev);
 
                             if (proxy == null) continue;
 
@@ -842,29 +844,29 @@ namespace GitBifrost
 
                                 if (file_missing)
                                 {
-                                    Log(LogNoiseLevel.Normal, " - Missing");
+                                    Log(" - Missing");
                                 }
 
                                 if (wrong_size)
                                 {
-                                    Log(LogNoiseLevel.Normal, " - Wrong Size: Got '{0}' Expected '{1}'", file_bytes.Length, proxy.FileSize);
+                                    Log(" - Wrong Size: Got '{0}' Expected '{1}'", file_bytes.Length, proxy.FileSize);
                                 }
 
                                 if (bad_sha)
                                 {
-                                    Log(LogNoiseLevel.Normal, " - Bad SHA: Got '{0}' Expected '{1}'", file_sha, proxy.SHA1);
+                                    Log(" - Bad SHA: Got '{0}' Expected '{1}'", file_sha, proxy.SHA1);
                                 }
 
                                 Console.ResetColor();
                             }
                             else if (arg_verbose)
                             {
-                                Log(LogNoiseLevel.Normal, " - OK!");
+                                Log(" - OK!");
                             }
 
                             if (arg_verbose | bad_things)
                             {
-                                LogLine(LogNoiseLevel.Normal, "");
+                                LogLine("");
                             }
                         }
                     }
@@ -874,7 +876,7 @@ namespace GitBifrost
             }
             else
             {
-                LogLine(LogNoiseLevel.Normal, "Bifrost: Failed to open store '{0}'", store_uri.AbsoluteUri);
+                LogLine("Giant: Failed to open store '{0}'", store_uri.AbsoluteUri);
                 return Failed;
             }
 
@@ -884,12 +886,12 @@ namespace GitBifrost
 
         static int CmdHelp(string[] args)
         {
-            LogLine(LogNoiseLevel.Normal, "usage: git-bifrost <command> [<args>]");
-            LogLine(LogNoiseLevel.Normal, "");
-            LogLine(LogNoiseLevel.Normal, "Commands:");
-            LogLine(LogNoiseLevel.Normal, "   clone       Like a normal git-clone but installs git-bifrost prior to checkout.");
-            LogLine(LogNoiseLevel.Normal, "   init        Installs bifrost into the specified git repository.");
-            LogLine(LogNoiseLevel.Normal, "   verify      Verifies that all indexed, bifrost managed files reachable in a store and are intact.");
+            LogLine("usage: git-giant <command> [<args>]");
+            LogLine("");
+            LogLine("Commands:");
+            LogLine("   clone       Like a normal git-clone but installs git-giant prior to checkout.");
+            LogLine("   init        Installs git-giant into the specified git repository.");
+            LogLine("   verify      Verifies that all indexed, git-giant managed files reachable in a store and are intact.");
 
             return Succeeded;
         }
@@ -904,7 +906,7 @@ namespace GitBifrost
 
                 Directory.SetCurrentDirectory(arg_directory);
 
-                InstallBifrost();
+                InstallGitGiant();
 
                 if (StartGit("checkout").WaitForExitSucceed(true))
                 {
@@ -917,32 +919,25 @@ namespace GitBifrost
 
         static int CmdInit(string[] args)
         {
-            return InstallBifrost();
+            return InstallGitGiant();
         }
             
-        static int InstallBifrost()
+        static int InstallGitGiant()
         {
             if (!Directory.Exists(".git"))
             {
-                Console.WriteLine("No git repository at '{0}'. Init a repo before using bifrost.", Directory.GetCurrentDirectory());
+                LogLine("Giant: No git repository at '{0}'. Init a repo before using git-giant.", Directory.GetCurrentDirectory());
                 return Failed;
             }
+                
+            string filter_clean = string.Format("{0} filter-clean %f", ExecName);
+            string filter_smudge = string.Format("{0} filter-smudge %f", ExecName);
+            string hook_precommit = string.Format("{0} hook-pre-commit \"$@\"", ExecName);
+            string hook_prepush = string.Format("{0} hook-pre-push \"$@\"", ExecName);
 
-#if !(__MonoCS__)
-            string filter_clean = "git-bifrost.exe filter-clean %f";
-            string filter_smudge = "git-bifrost.exe filter-smudge %f";
-            string hook_precommit = "git-bifrost.exe hook-pre-commit \"$@\"";
-            string hook_prepush = "git-bifrost.exe hook-pre-push \"$@\"";
-#else
-            string filter_clean = "git-bifrost filter-clean %f";
-            string filter_smudge = "git-bifrost filter-smudge %f";
-            string hook_precommit = "git-bifrost hook-pre-commit \"$@\"";
-            string hook_prepush = "git-bifrost hook-pre-push \"$@\"";
-#endif
-
-            if (!GitConfigSet("filter.bifrost.clean", filter_clean) ||
-                !GitConfigSet("filter.bifrost.smudge", filter_smudge) ||
-                !GitConfigSet("filter.bifrost.required", "true"))
+            if (!GitConfigSet("filter.giant.clean", filter_clean) ||
+                !GitConfigSet("filter.giant.smudge", filter_smudge) ||
+                !GitConfigSet("filter.giant.required", "true"))
             {
                 return Failed;
             }
@@ -962,16 +957,16 @@ namespace GitBifrost
                 return Failed;
             }
 
-            Console.WriteLine("Bifrost successfully installed into repo.");
+            LogLine("Giant successfully installed.");
 
             return Succeeded;
         }
 
-        static string GetProgressString(string message, int num, int total, string suffix = null)
+        static string GetProgressString(string message, int num, int total)
         {
             int percent_complete = Math.Min(100, Math.Max(0, (int)((((float)num) / total) * 100)));
-            return string.Format("{0}: {1}% ({2}/{3}){4}",
-                message, percent_complete, num, total, suffix == null ? "" : suffix);
+
+            return string.Format("{0}: {1}% ({2}/{3})", message, percent_complete, num, total);
         }
 
         static string GetFilePathFromSHA(string file_hash)
@@ -1002,23 +997,23 @@ namespace GitBifrost
             return BitConverter.ToString(SHA1Managed.Create().ComputeHash(bytes)).Replace("-", "");
         }
 
-        static BifrostPoxy GetProxyData(string file_rev)
+        static GitGiantPoxy GetProxyData(string file_rev)
         {
-            BifrostPoxy proxy = null;
+            GitGiantPoxy proxy = null;
 
             using (Process git_proc = StartGit(string.Format("cat-file blob \"{0}\"", file_rev)))
             {
                 StreamReader proc_out = git_proc.StandardOutput;
 
-                char[] proxy_sig_buffer = new char[BifrostProxySignature.Length];
+                char[] proxy_sig_buffer = new char[GitGiantProxySignature.Length];
 
                 int bytes_read = proc_out.Read(proxy_sig_buffer, 0, proxy_sig_buffer.Length);
 
-                if (bytes_read == proxy_sig_buffer.Length && new string(proxy_sig_buffer) == BifrostProxySignature)
+                if (bytes_read == proxy_sig_buffer.Length && new string(proxy_sig_buffer) == GitGiantProxySignature)
                 {
                     proc_out.ReadLine(); // Read remaining line ending
 
-                    proxy = new BifrostPoxy(
+                    proxy = new GitGiantPoxy(
                         file_rev,
                         proc_out.ReadLine(), // Version
                         proc_out.ReadLine(), // SHA1
@@ -1059,7 +1054,7 @@ namespace GitBifrost
             // Add internal store
             {
                 var local = new Dictionary<string, string>();
-                local["name"] = "store.BIFROST.INTERNAL"; // Unique, reserved name
+                local["name"] = "store.GITGIANT.INTERNAL"; // Unique, reserved name
                 local["url"] = Path.Combine(Directory.GetCurrentDirectory(), LocalStoreLocation);
 
                 stores.Add(local);
@@ -1067,11 +1062,11 @@ namespace GitBifrost
 
             List<string> data_stores_text = new List<string>();
 
-            data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitbifrost"));
+            data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitgiant"));
 
-            if (File.Exists(".gitbifrostuser"))
+            if (File.Exists(".gitgiantuser"))
             {
-                data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitbifrostuser"));
+                data_stores_text.AddRange(GitConfigGetRegex(@"^store\..*", ".gitgiantuser"));
             }
 
             foreach (string store_text in data_stores_text)
@@ -1233,8 +1228,28 @@ namespace GitBifrost
                 return process;
             }
 
-            LogLine(LogNoiseLevel.Normal, "Failed to start git.");
+            LogLine("Giant: Failed to start git.");
             return null;
+        }
+
+        public static void LogDebug(string format, params object[] arg)
+        {
+            Log(LogNoiseLevel.Debug, format, arg);
+        }
+
+        public static void LogLineDebug(string format, params object[] arg)
+        {
+            LogLine(LogNoiseLevel.Debug, format, arg);
+        }
+
+        public static void Log(string format, params object[] arg)
+        {
+            Log(LogNoiseLevel.Normal, format, arg);
+        }
+
+        public static void LogLine(string format, params object[] arg)
+        {
+            LogLine(LogNoiseLevel.Normal, format, arg);
         }
 
         public static void Log(LogNoiseLevel Level, string format, params object[] arg)

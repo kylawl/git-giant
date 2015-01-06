@@ -7,7 +7,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 
-namespace GitBifrostTests
+namespace GitGiantTests
 {
     class Program
     {
@@ -44,9 +44,9 @@ namespace GitBifrostTests
             // Cleanup / Setup
             //
 
-            if (Directory.Exists("bifrost_test_products"))
+            if (Directory.Exists("test_products"))
             {
-                var directory = new DirectoryInfo("bifrost_test_products") { Attributes = FileAttributes.Normal };
+                var directory = new DirectoryInfo("test_products") { Attributes = FileAttributes.Normal };
 
                 foreach (var info in directory.GetFileSystemInfos("*", SearchOption.AllDirectories))
                 {
@@ -56,9 +56,9 @@ namespace GitBifrostTests
                 directory.Delete(true);
             }
 
-            Directory.CreateDirectory("bifrost_test_products");
+            Directory.CreateDirectory("test_products");
 
-            TestingRoot = PathCombine(Directory.GetCurrentDirectory(), "bifrost_test_products");
+            TestingRoot = PathCombine(Directory.GetCurrentDirectory(), "test_products");
             Directory.SetCurrentDirectory(TestingRoot);
 
             CommonRemotePath = PathCombine(TestingRoot, CommonRemote);
@@ -78,14 +78,14 @@ namespace GitBifrostTests
             byte[] smallBinaryData = new byte[50 * 1024];
             rand.NextBytes(smallBinaryData);
             string smallBinarySHA = SHA1FromBytes(smallBinaryData);
-            string smallBinaryLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(smallBinarySHA));
+            string smallBinaryLocalStorePath = PathCombine(".git/giant/store", GetStorePathFromSHA(smallBinarySHA));
 
-            // Binary file too big to go in the normal git repo, must pass through bifrost
+            // Binary file too big to go in the normal git repo, must pass through git-giant
             string bigBinaryName = "BinaryFileBig.bin";
             byte[] bigBinaryData = new byte[500 * 1024];
             rand.NextBytes(bigBinaryData);
             string bigBinarySHA = SHA1FromBytes(bigBinaryData);
-            string bigBinaryLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA));
+            string bigBinaryLocalStorePath = PathCombine(".git/giant/store", GetStorePathFromSHA(bigBinarySHA));
 
             // Text file small enough to pass through the filter
             string smallTextName = "TextFileSmall.txt";
@@ -93,12 +93,12 @@ namespace GitBifrostTests
             RandomText(rand, smallTextData);
             string smallTextSHA = SHA1FromBytes(smallTextData);
 
-            // Text file too big to go in the normal git repo, must pass through bifrost
+            // Text file too big to go in the normal git repo, must pass through git-giant
             string bigTextName = "some/directory/TextFileBig.big_txt";
             byte[] bigTextData = new byte[10 * 1024 * 1024];
             RandomText(rand, bigTextData);
             string bigTextSHA = SHA1FromBytes(bigTextData);
-            string bigTextLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigTextSHA));
+            string bigTextLocalStorePath = PathCombine(".git/giant/store", GetStorePathFromSHA(bigTextSHA));
 
 
             //
@@ -114,7 +114,7 @@ namespace GitBifrostTests
                 IsZero("Init git repo", StartProcessWaitForExitCode("git", "init " + test_root));
 
                 Directory.SetCurrentDirectory(test_root);
-                IsZero("Install bifrost", StartProcessWaitForExitCode("git", "bifrost init"));
+                IsZero("Install giant", StartProcessWaitForExitCode("git", "giant init"));
 
                 Directory.CreateDirectory(Path.GetDirectoryName(smallBinaryName));
                 File.WriteAllBytes(smallBinaryName, smallBinaryData);
@@ -131,7 +131,7 @@ namespace GitBifrostTests
                 // Should fail because some files are too big.
                 NotZero("Detect over budget files", StartProcessWaitForExitCode("git", "commit -m \"Added test files.\""));
 
-                File.WriteAllLines(".gitattributes", new string[] { "*.bin filter=bifrost", "*.big_txt filter=bifrost" });
+                File.WriteAllLines(".gitattributes", new string[] { "*.bin filter=giant", "*.big_txt filter=giant" });
                 IsZero("Add .gitattributes", StartProcessWaitForExitCode("git", "add .gitattributes"));
 
                 // Should fail because the files need to be restaged after adding the filter
@@ -141,9 +141,9 @@ namespace GitBifrostTests
                 IsZero("Add all files", StartProcessWaitForExitCode("git", "add --all"));
                 IsZero("Valid commit", StartProcessWaitForExitCode("git", "commit -m \"Added test files.\""));
 
-                // Inspect the internal bifrost store to make sure the files in there are good
+                // Inspect the internal giant store to make sure the files in there are good
                 {
-                    string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
+                    string[] files = Directory.GetFiles(".git/giant/store", "*.*", SearchOption.AllDirectories);
                     SanitizePaths(files);
 
                     AreEqual("Internal store file count", 3, files.Length);
@@ -165,11 +165,11 @@ namespace GitBifrostTests
                 // Push
                 //////////////////////////////////////////////////////////////////////////
 
-                // Push should fail becasue we don't have a .gitbifrost config to tell us where the primary store is
+                // Push should fail becasue we don't have a .gitgiant config to tell us where the primary store is
                 NotZero("Fail push to empty remote", StartProcessWaitForExitCode("git", string.Format("push {0} master", CommonRemotePath)));
 
                 // Push should succeed now
-                WriteBifrostConfig();
+                WriteGiantConfig();
                 IsZero("Successfull push to remote and store", StartProcessWaitForExitCode("git", string.Format("push {0} master", CommonRemotePath)));
 
                 // Check remote store for consistency
@@ -210,20 +210,20 @@ namespace GitBifrostTests
 
                 string test_root = PathCombine(TestingRoot, "clone_edit_push");
 
-                // The first clone should fail becasue there is no .gitbifrost file checked in, 
+                // The first clone should fail becasue there is no .gitgiant file checked in, 
                 // therefor there is no way to retreive files form the store
-                NotZero("Bifrost clone", StartProcessWaitForExitCode("git", string.Format("bifrost clone {0} {1}", CommonRemotePath, test_root)));
+                NotZero("Giant clone", StartProcessWaitForExitCode("git", string.Format("giant clone {0} {1}", CommonRemotePath, test_root)));
 
                 Directory.SetCurrentDirectory(test_root);
 
-                WriteBifrostConfig();
+                WriteGiantConfig();
 
                 // Force checkout with attribute file in place
-                IsZero("Bifrost checkout", StartProcessWaitForExitCode("git", string.Format("checkout -f master")));
+                IsZero("Giant checkout", StartProcessWaitForExitCode("git", string.Format("checkout -f master")));
 
-                // Inspect the internal bifrost store to make sure the files in there are good
+                // Inspect the internal giant store to make sure the files in there are good
                 {
-                    string[] files = Directory.GetFiles(".git/bifrost/data", "*.*", SearchOption.AllDirectories);
+                    string[] files = Directory.GetFiles(".git/giant/store", "*.*", SearchOption.AllDirectories);
                     SanitizePaths(files);
 
                     AreEqual("Internal store file count", 3, files.Length);
@@ -242,7 +242,7 @@ namespace GitBifrostTests
                 }
 
                 //
-                // Add / Commit .gitbifrost, modified file and new file
+                // Add / Commit .gitgiant, modified file and new file
                 //
 
                 // Modified big text file from before
@@ -250,14 +250,14 @@ namespace GitBifrostTests
                 byte[] modifiedBigTextData = new byte[bigTextData.Length];
                 RandomText(rand, modifiedBigTextData);
                 string modifiedBigTextSHA = SHA1FromBytes(modifiedBigTextData);
-                string modifiedBigTextLocalStorePath = PathCombine(".git/bifrost/data", GetStorePathFromSHA(modifiedBigTextSHA));
+                string modifiedBigTextLocalStorePath = PathCombine(".git/giant/store", GetStorePathFromSHA(modifiedBigTextSHA));
 
-                // Another binary file too big to go in the normal git repo, must pass through bifrost
+                // Another binary file too big to go in the normal git repo, must pass through giant
                 string bigBinaryName2 = "BinaryFileBigNumber2.bin";
                 byte[] bigBinaryData2 = new byte[50 * 1024 * 1024];
                 rand.NextBytes(bigBinaryData2);
                 string bigBinarySHA2 = SHA1FromBytes(bigBinaryData2);
-                string bigBinaryLocalStorePath2 = PathCombine(".git/bifrost/data", GetStorePathFromSHA(bigBinarySHA2));
+                string bigBinaryLocalStorePath2 = PathCombine(".git/giant/store", GetStorePathFromSHA(bigBinarySHA2));
 
                 File.WriteAllBytes(modifiedBigTextName, modifiedBigTextData);
                 File.WriteAllBytes(bigBinaryName2, bigBinaryData2);
@@ -445,9 +445,9 @@ namespace GitBifrostTests
 
         // Utils
 
-        static void WriteBifrostConfig()
+        static void WriteGiantConfig()
         {
-            File.WriteAllText(".gitbifrost", 
+            File.WriteAllText(".gitgiant", 
                 string.Format(
 @"[repo]
     text-size-threshold = 5242880

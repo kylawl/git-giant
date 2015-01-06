@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace GitBifrost
+namespace GitGiant
 {
     /* SkippedLate is the same as skipped but for when a store push was attempted,
      * but another client updated the file before this one could complete 

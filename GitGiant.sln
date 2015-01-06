@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 2012
 VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitBifrost", "GitBifrost\GitBifrost.csproj", "{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitGiant", "GitGiant\GitGiant.csproj", "{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitBifrostTests", "GitBifrostTests\GitBifrostTests.csproj", "{3BABDEDD-B9B5-435F-98A4-4C655C0B0C1E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GitGiantTests", "GitGiantTests\GitGiantTests.csproj", "{3BABDEDD-B9B5-435F-98A4-4C655C0B0C1E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{8AC29176-9E95-47C0-A2A1-CA66AE1512B6}"
 	ProjectSection(SolutionItems) = preProject
@@ -31,7 +31,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
-		StartupItem = GitBifrostTests\GitBifrostTests.csproj
+		StartupItem = GitGiantTests\GitGiantTests.csproj
 		Policies = $0
 		$0.TextStylePolicy = $1
 		$1.inheritsSet = VisualStudio

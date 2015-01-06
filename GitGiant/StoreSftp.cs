@@ -1,21 +1,20 @@
-﻿// Copyright (c) 2014 Luminawesome Games, Ltd. All Rights Reserved.
-
-using System;
-using System.Net.FtpClient;
+﻿using System;
+using Renci.SshNet;
 using System.IO;
-using System.Collections.Generic;
-using System.Net;
 
-namespace GitBifrost
+namespace GitGiant
 {
-    class StoreFtp : IStoreInterface
+    class StoreSftp : IStoreInterface
     {
+        SftpClient Client;
+
+        public StoreSftp()
+        {
+        }
+
         #region IStoreInterface implementation
 
-        FtpClient Client = null;
-//        Dictionary<string, string> Store;
-
-        public bool OpenStore(Uri uri, Dictionary<string, string> store)
+        public bool OpenStore(Uri uri, System.Collections.Generic.Dictionary<string, string> store)
         {
             if (Client != null)
             {
@@ -25,32 +24,25 @@ namespace GitBifrost
 
             bool store_available = false;
 
-            if (uri.Scheme == Uri.UriSchemeFtp || uri.Scheme == "ftps")
+            if (uri.Scheme == "sftp")
             {
-                NetworkCredential credentials = new NetworkCredential();
-                credentials.UserName = store.GetValue("username", "anonymous");
-                credentials.Password = store.GetValue("password", "");
-
-                FtpClient ftp_client = new FtpClient();
-                ftp_client.Credentials = credentials;
-                ftp_client.Host = uri.Host;
+                SftpClient sftp_client = new SftpClient(uri.Host, 22, 
+                    store.GetValue("username", "anonymous"), 
+                    store.GetValue("password", ""));
 
                 try
                 {
-                    ftp_client.Connect();
+                    sftp_client.Connect();
+
+                    if (sftp_client.IsConnected && sftp_client.Exists(uri.AbsolutePath))
+                    {
+                        sftp_client.ChangeDirectory(uri.AbsolutePath);
+
+                        Client = sftp_client;
+                        store_available = true;
+                    }
                 }
                 catch
-                {
-                    // It's ok to do nothing here
-                }
-
-                if (ftp_client.IsConnected && ftp_client.DirectoryExists(uri.AbsolutePath))
-                {
-                    ftp_client.SetWorkingDirectory(uri.AbsolutePath);
-                    Client = ftp_client;
-                    store_available = true;
-                }
-                else
                 {
                     Program.LogLine(LogNoiseLevel.Loud, "Can't connect to {0}", uri.AbsoluteUri);
                 }
@@ -65,25 +57,33 @@ namespace GitBifrost
             Client.Dispose();
             Client = null;
         }
-            
+
         public SyncResult PushFile(string source_file, Uri store_location, string filename)
         {
             string dir = Path.GetDirectoryName(filename);
 
             try
             {
-                if (!Client.FileExists(filename))
+                if (!Client.Exists(filename))
                 {
-                    if (!Client.DirectoryExists(dir))
+                    if (!Client.Exists(dir))
                     {
                         try
                         {
-                            Client.CreateDirectory(dir);
+                            string[] dirs = dir.Split(new char[] {Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar}, StringSplitOptions.RemoveEmptyEntries); 
+
+                            foreach(string sub_dir in dirs)
+                            {
+                                Client.CreateDirectory(sub_dir);
+                                Client.ChangeDirectory(sub_dir);
+                            }
+
+                            Client.ChangeDirectory(store_location.AbsolutePath);
                         }
                         catch
                         {
-                            Program.LogLine(LogNoiseLevel.Normal, "Bifrost: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
-                                dir, Client.GetWorkingDirectory());
+                            Program.LogLine("Giant: Unable to create directory '{0}' in '{1}'. Do you have the correct permissions?", 
+                                dir, Client.WorkingDirectory);
 
                             return SyncResult.Failed;
                         }
@@ -93,10 +93,9 @@ namespace GitBifrost
                     Guid guid = Guid.NewGuid();
 
                     string store_filename_temp = string.Format("{0}.tmp", guid.ToString().Replace("-", ""));
-                    string store_filepath_temp = Path.Combine(dir, store_filename_temp);
+                    string store_filepath_temp = Path.Combine(store_location.AbsolutePath, dir, store_filename_temp);
 
-
-                    using (Stream output_stream = Client.OpenWrite(store_filepath_temp))
+                    using (Stream output_stream = Client.Create(store_filepath_temp))
                     {
                         using (Stream file_stream = File.OpenRead(source_file))
                         {
@@ -104,9 +103,9 @@ namespace GitBifrost
                         }
                     }
 
-                    if (!Client.FileExists(filename))
+                    if (!Client.Exists(filename))
                     {
-                        Client.Rename(store_filepath_temp, filename);
+                        Client.RenameFile(store_filepath_temp, filename);
                         return SyncResult.Success;
                     }
                     else
@@ -115,7 +114,6 @@ namespace GitBifrost
                         return SyncResult.SkippedLate;
                     }
                 }
-
             }
             catch
             {
@@ -129,9 +127,9 @@ namespace GitBifrost
         {
             string input_filepath = Path.Combine(uri.LocalPath, filename);
 
-            if (Client.FileExists(input_filepath))
+            if (Client.Exists(input_filepath))
             {
-                long size = Client.GetFileSize(input_filepath);
+                long size = Client.GetAttributes(filename).Size;
 
                 byte[] buffer = new byte[size];
 

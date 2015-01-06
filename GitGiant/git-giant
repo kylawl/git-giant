@@ -1,0 +1,4 @@
+#!/bin/bash
+if [ "$(uname)" = "Darwin" ]; then
+	mono `dirname $BASH_SOURCE`/git-giant.exe "$@"
+fi

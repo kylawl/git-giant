@@ -7,8 +7,8 @@
     <ProjectGuid>{7B0F2B0F-26DF-45A6-9F95-AB81F9A4DA8E}</ProjectGuid>
     <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>GitBifrost</RootNamespace>
-    <AssemblyName>git-bifrost</AssemblyName>
+    <RootNamespace>GitGiant</RootNamespace>
+    <AssemblyName>git-giant</AssemblyName>
     <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
@@ -61,10 +61,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
-    <None Include="git-bifrost">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
     <None Include="packages.config" />
+    <None Include="git-giant" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

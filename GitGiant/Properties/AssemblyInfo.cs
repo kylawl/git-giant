@@ -7,11 +7,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("GitBifrost")]
+[assembly: AssemblyTitle("git-giant")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Luminawesome Games, Ltd")]
-[assembly: AssemblyProduct("GitBifrost")]
+[assembly: AssemblyProduct("git-giant")]
 [assembly: AssemblyCopyright("Copyright © 2014 Luminawesome Games, Ltd. All Rights Reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

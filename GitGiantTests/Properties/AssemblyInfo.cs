@@ -6,11 +6,11 @@ using System.Runtime.CompilerServices;
 // Information about this assembly is defined by the following attributes.
 // Change them to the values specific to your project.
 
-[assembly: AssemblyTitle("GitBifrostTests")]
+[assembly: AssemblyTitle("GitGiantTests")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Luminawesome Games, Ltd")]
-[assembly: AssemblyProduct("GitBifrost Unit Tests")]
+[assembly: AssemblyProduct("GitGiant Unit Tests")]
 [assembly: AssemblyCopyright("Copyright © 2014 Luminawesome Games, Ltd. All Rights Reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
