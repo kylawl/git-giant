@@ -230,7 +230,7 @@ namespace GitGiant
 
             if (proxy_revs.Count == 0)
             {
-                LogLine("No files to push.");
+                LogLine("git-giant: No files to push.");
                 return Succeeded;
             }
 
@@ -531,6 +531,8 @@ namespace GitGiant
                 file_stream.Position = 0;
             }
 
+            Log("git-giant: Caching '{0}'...\r", arg_filepath);
+
             if (is_gitgiant_proxy)
             {
                 // Acording to the git docs, it's possible for a filter to run on the same file multiple times so we need to handle
@@ -565,6 +567,8 @@ namespace GitGiant
             string output_filename = GetFilePathFromSHA(file_hash);
 
             WriteToLocalStore(file_stream, output_filename);
+
+            LogLine("git-giant: Caching '{0}'...", arg_filepath);
 
             return Succeeded;
         }
@@ -614,8 +618,6 @@ namespace GitGiant
             var store_interfaces = GetStoreInterfaces();
 
             var stores = GetStores();
-
-            Log("git-giant: Fetching '{0}'...\r", arg_filepath);
 
             LogLineDebug("git-giant: Store count: {0}", stores.Count);
 
@@ -706,13 +708,9 @@ namespace GitGiant
                 }
             }
 
-            if (succeeded)
+            if (!succeeded)
             {
-                LogLine("git-giant: Fetching '{0}'... Succeeded", arg_filepath);
-            }
-            else
-            {
-                LogLine("git-giant: Fetching '{0}'... Failed", arg_filepath);
+                LogLine("git-giant: Fetching '{0}' Failed.", arg_filepath);
             }
 
             return succeeded ? Succeeded : Failed;
@@ -963,7 +961,7 @@ namespace GitGiant
                 return Failed;
             }
 
-            LogLine("Giant successfully installed.");
+            LogLine("git-giant: Successfully installed.");
 
             return Succeeded;
         }
