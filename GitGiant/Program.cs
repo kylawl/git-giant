@@ -615,6 +615,8 @@ namespace GitGiant
 
             var stores = GetStores();
 
+            Log("Giant: Fetching '{0}'...\r", arg_filepath);
+
             LogLineDebug("Giant: Store count: {0}", stores.Count);
 
             // Walk through all the stores/interfaces and attempt to retrevie a matching file from any of them
@@ -704,9 +706,13 @@ namespace GitGiant
                 }
             }
 
-            if (!succeeded)
+            if (succeeded)
             {
-                LogLine("Giant: Failed to get file '{0}'.", arg_filepath);
+                LogLine("Giant: Fetching '{0}'... Succeeded", arg_filepath);
+            }
+            else
+            {
+                LogLine("Giant: Fetching '{0}'... Failed", arg_filepath);
             }
 
             return succeeded ? Succeeded : Failed;
