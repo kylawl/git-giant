@@ -70,34 +70,34 @@ git-giant needs to install some hooks and filters before you do your first check
 ### Common .gitattributes ###
 
 	# Common
-	*.bmp  filter=giant
-	*.exe  filter=giant
-	*.dae  filter=giant
-	*.dll  filter=giant
-	*.fbx  filter=giant
-	*.ico  filter=giant
-	*.jpg  filter=giant
-	*.ma   filter=giant
-	*.max  filter=giant
-	*.mb   filter=giant
-	*.mp3  filter=giant
-	*.obj  filter=giant
-	*.ogg  filter=giant
-	*.png  filter=giant
-	*.psd  filter=giant
-	*.so   filter=giant
-	*.tga  filter=giant
-	*.ttf  filter=giant
-	*.tiff filter=giant
-	*.ztl  filter=giant
-	*.wav  filter=giant
+	*.bmp  filter=giant binary
+	*.exe  filter=giant binary
+	*.dae  filter=giant binary
+	*.dll  filter=giant binary
+	*.fbx  filter=giant binary
+	*.ico  filter=giant binary
+	*.jpg  filter=giant binary
+	*.ma   filter=giant binary
+	*.max  filter=giant binary
+	*.mb   filter=giant binary
+	*.mp3  filter=giant binary
+	*.obj  filter=giant binary
+	*.ogg  filter=giant binary
+	*.png  filter=giant binary
+	*.psd  filter=giant binary
+	*.so   filter=giant binary
+	*.tga  filter=giant binary
+	*.ttf  filter=giant binary
+	*.tiff filter=giant binary
+	*.ztl  filter=giant binary
+	*.wav  filter=giant binary
 
 	# UE4
-	*.uasset filter=giant
-	*.umap   filter=giant
+	*.uasset filter=giant binary
+	*.umap   filter=giant binary
 
 	# Unity
-	*.unity filter=giant
+	*.unity filter=giant binary
 
 ### Known Issues ###
 
