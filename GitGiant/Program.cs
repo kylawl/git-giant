@@ -442,7 +442,7 @@ namespace GitGiant
 
                         do
                         {
-                            bytes_read = git_proc.StandardOutput.BaseStream.Read(scratch_buffer, 0, scratch_buffer.Length);
+                            bytes_read = proc_stream.Read(scratch_buffer, 0, scratch_buffer.Length);
                             size += bytes_read;
                         }
                         while(bytes_read > 0);
@@ -789,7 +789,7 @@ namespace GitGiant
 
                     git_proc.WaitForExit();
                 }
-
+                    
                 foreach (string revision in revision_list)
                 {
                     string[] revision_files = GetFilesAndStatusInRevision(revision);
@@ -841,7 +841,7 @@ namespace GitGiant
 
                             if (arg_verbose | bad_things)
                             {
-                                Log(LogNoiseLevel.Normal, file_rev);
+                                Log(file_rev);
                             }
 
                             if (bad_things)
@@ -890,6 +890,51 @@ namespace GitGiant
 
         }
 
+        static int CmdSync(string[] args)
+        {
+            return Failed;
+
+            string arg_parse_context = null;
+
+            bool arg_sing_pull_all_branches = true;
+            string arg_sync_pull_branch = null;
+            try
+            {
+                for (int i = 1; i < args.Length; ++i)
+                {
+                    string arg = args[i];
+
+                    switch(arg)
+                    {
+    //                    case "--push":
+    //                        arg_parse_context = "push";
+    //                        break;
+                        case "--pull":
+
+                        break;
+
+                        default:
+                            LogLine("git-giant: Unknown argument '{0}'", arg);
+                        break;
+                    }
+                }
+            }
+            catch
+            {
+                LogLine("git-giant: Failed to parse arguments.");
+                return Failed;
+            }
+
+//            bool sync_push = GetArgSet(args, "--push");
+            bool sync_pull = GetArgSet(args, "--pull");
+
+
+
+
+
+            return 0;
+        }
+
         static int CmdHelp(string[] args)
         {
             LogLine("usage: git-giant <command> [<args>]");
@@ -897,6 +942,7 @@ namespace GitGiant
             LogLine("Commands:");
             LogLine("   clone       Like a normal git-clone but installs git-giant prior to checkout.");
             LogLine("   init        Installs git-giant into the specified git repository.");
+//            LogLine("   sync        Syncronizes giant stores.");
             LogLine("   verify      Verifies that all indexed, git-giant managed files reachable in a store and are intact.");
 
             return Succeeded;
@@ -905,7 +951,6 @@ namespace GitGiant
         static int CmdClone(string[] args)
         {
             string clone_args = string.Join(" ", args, 1, args.Length - 1);
-
             if (StartGit("clone", "--no-checkout", clone_args).WaitForExitSucceed(true))
             {
                 string arg_directory = args.Length > 2 ? args[args.Length - 1] : Path.GetFileNameWithoutExtension(args[1].TrimEnd('/', '\\'));
@@ -1107,7 +1152,7 @@ namespace GitGiant
 
             foreach (string arg in args)
             {
-                if (arg.StartsWith(arg_key))
+                if (arg.StartsWith(arg_key+"="))
                 {
                     string[] tokens = arg.Split(eq, 2);
                     if (tokens.Length == 2)
@@ -1240,25 +1285,25 @@ namespace GitGiant
 
         public static void LogDebug(string format, params object[] arg)
         {
-            Log(LogNoiseLevel.Debug, format, arg);
+            WriteToLog(LogNoiseLevel.Debug, format, arg);
         }
 
         public static void LogLineDebug(string format, params object[] arg)
         {
-            LogLine(LogNoiseLevel.Debug, format, arg);
+            WriteToLogLine(LogNoiseLevel.Debug, format, arg);
         }
 
         public static void Log(string format, params object[] arg)
         {
-            Log(LogNoiseLevel.Normal, format, arg);
+            WriteToLog(LogNoiseLevel.Normal, format, arg);
         }
 
         public static void LogLine(string format, params object[] arg)
         {
-            LogLine(LogNoiseLevel.Normal, format, arg);
+            WriteToLogLine(LogNoiseLevel.Normal, format, arg);
         }
 
-        public static void Log(LogNoiseLevel Level, string format, params object[] arg)
+        public static void WriteToLog(LogNoiseLevel Level, string format, params object[] arg)
         {
             if ((int)NoiseLevel >= (int)Level)
             {
@@ -1266,7 +1311,7 @@ namespace GitGiant
             }
         }
 
-        public static void LogLine(LogNoiseLevel Level, string format, params object[] arg)
+        public static void WriteToLogLine(LogNoiseLevel Level, string format, params object[] arg)
         {
             if ((int)NoiseLevel >= (int)Level)
             {

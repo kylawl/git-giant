@@ -18,7 +18,7 @@ namespace GitGiant
         {
             if (Client != null)
             {
-                Program.LogLine(LogNoiseLevel.Normal, "Store is already open, did you forget to close the other one first?");
+                Program.LogLine("git-giant: Store is already open, did you forget to close the other one first?");
                 return false;
             }
 
@@ -44,7 +44,7 @@ namespace GitGiant
                 }
                 catch
                 {
-                    Program.LogLine(LogNoiseLevel.Loud, "Can't connect to {0}", uri.AbsoluteUri);
+                    Program.LogDebug("git-giant: Can't connect to {0}", uri.AbsoluteUri);
                 }
             }
 

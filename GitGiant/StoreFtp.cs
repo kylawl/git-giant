@@ -52,7 +52,7 @@ namespace GitGiant
                 }
                 else
                 {
-                    Program.LogLineDebug("git-giant: Can't connect to {0}", uri.AbsoluteUri);
+                    Program.LogLine("git-giant: Can't connect to {0}", uri.AbsoluteUri);
                 }
             }
 
