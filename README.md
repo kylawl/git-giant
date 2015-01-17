@@ -3,7 +3,7 @@ git-giant
 
 Built for game developers who are used to the world of versioned game data, git-giant will transparently handle your large data separatly from the rest of your git repository. You should never need to directly invoke git-giant after your initial init/clone.
 
-*There is an issue with git which can wreak havok on your repo if you fail to catch and properly configure all files before you commit them for the first time. See https://github.com/LuminawesomeGames/git-giant/issues/1*
+**Important!** *There is an issue with git which can wreak havok on your repo if you fail to catch and properly configure all file attributes before you commit them for the first time through a filter. See https://github.com/LuminawesomeGames/git-giant/issues/1 for more details*
 
 
 ## Goals ##
