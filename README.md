@@ -3,6 +3,9 @@ git-giant
 
 Built for game developers who are used to the world of versioned game data, git-giant will transparently handle your large data separatly from the rest of your git repository. You should never need to directly invoke git-giant after your initial init/clone.
 
+*There is an issue with git which can wreak havok on your repo if you fail to catch and properly configure all files before you commit them for the first time. See https://github.com/LuminawesomeGames/git-giant/issues/1*
+
+
 ## Goals ##
 1. Allow users to version large binaries easily with along side source code.
 2. Binary handling must be transparent to non-power users and other tools so that anyone and anything that uses git doesn't require knowlege of git-giant.
