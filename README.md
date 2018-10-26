@@ -1,5 +1,7 @@
 git-giant
 ==========
+## This is a dead end, github's LFS is basically a more robust implementation of this! ##
+
 
 Built for game developers who are used to the world of versioned game data, git-giant will transparently handle your large data separatly from the rest of your git repository. You should never need to directly invoke git-giant after your initial init/clone.
 
